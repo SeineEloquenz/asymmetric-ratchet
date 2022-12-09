@@ -211,20 +211,6 @@ mod test {
     }
 
     #[test]
-    fn public_key_too_advanced() {
-        let message: &[u8] = b"Hello, world!";
-
-        let mut rng = rand::thread_rng();
-        let (mut pk, sk) = generate_keypair(&mut rng);
-
-        pk.ratchet().unwrap();
-
-        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
-        let plain = sk.decrypt(cipher).unwrap();
-        assert_ne!(plain, message);
-    }
-
-    #[test]
     fn secret_key_too_advanced() {
         let message: &[u8] = b"Hello, world!";
 

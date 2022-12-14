@@ -41,6 +41,10 @@ use thiserror::Error;
 use serde::{Deserialize, Serialize};
 
 mod bte;
+mod bbg;
+mod nodename;
+
+pub use nodename::NodeName;
 
 type Aes128Ctr64LE = ctr::Ctr64LE<aes::Aes128>;
 static IV: [u8; 16] = [0; 16];
@@ -55,7 +59,7 @@ pub enum RatchetError {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Ciphertext {
-    hidden_key: bte::Ciphertext,
+    hidden_key: bbg::Ciphertext,
     payload: Vec<u8>,
 }
 
@@ -63,8 +67,8 @@ pub struct Ciphertext {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PublicKey {
-    inner_key: bte::PK,
-    current_name: bte::NodeName,
+    inner_key: bbg::PublicParams,
+    current_name: NodeName,
 }
 
 impl PublicKey {
@@ -88,7 +92,7 @@ impl PublicKey {
         let mut cipher = Aes128Ctr64LE::new(&aes_key.into(), &IV.into());
         cipher.apply_keystream(&mut payload);
 
-        let hidden_key = bte::enc(&mut rng, &self.inner_key, self.current_name, key);
+        let hidden_key = bbg::encrypt(&mut rng, &self.inner_key, self.current_name, &key);
         Ok(Ciphertext { hidden_key, payload })
     }
 }
@@ -97,9 +101,9 @@ impl PublicKey {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrivateKey {
-    public_key: bte::PK,
-    keystack: Vec<bte::SK>,
-    current_name: bte::NodeName,
+    public_params: bbg::PublicParams,
+    keystack: Vec<bbg::PrivateKey>,
+    current_name: NodeName,
 }
 
 impl PrivateKey {
@@ -113,11 +117,12 @@ impl PrivateKey {
     ///
     /// **Note**: This is a proof-of-concept implementation. There is no guarantee that the backing
     /// memory will actually be erased securely.
-    pub fn ratchet<R: Rng + CryptoRng>(&mut self, rng: R) -> Result<(), RatchetError> {
+    pub fn ratchet<R: Rng + CryptoRng>(&mut self, mut rng: R) -> Result<(), RatchetError> {
         let next_name = self.current_name.next().ok_or(RatchetError::Exhausted)?;
         let current_key = self.keystack.pop().unwrap();
         if !self.current_name.is_leaf() {
-            let (left, right) = bte::der(rng, self.current_name, &current_key);
+            let left = bbg::derive(&mut rng, &self.public_params, &current_key, self.current_name, self.current_name.left());
+            let right = bbg::derive(&mut rng, &self.public_params, &current_key, self.current_name, self.current_name.right());
             self.keystack.push(right);
             self.keystack.push(left);
         }
@@ -126,7 +131,7 @@ impl PrivateKey {
     }
 
     pub fn decrypt(&self, mut ciphertext: Ciphertext) -> Result<Vec<u8>, RatchetError> {
-        let key = bte::dec(&self.public_key, self.current_name, self.keystack.last().unwrap(), &ciphertext.hidden_key);
+        let key = bbg::decrypt(&self.public_params, self.keystack.last().unwrap(), &ciphertext.hidden_key);
         let aes_key = kdf(&key);
         let mut cipher = Aes128Ctr64LE::new(&aes_key.into(), &IV.into());
         cipher.apply_keystream(&mut ciphertext.payload);
@@ -136,16 +141,17 @@ impl PrivateKey {
 }
 
 /// Generates a new key pair.
-pub fn generate_keypair<R: Rng + CryptoRng>(rng: R) -> (PublicKey, PrivateKey) {
-    let (inner_pk, inner_sk) = bte::gen(rng);
+pub fn generate_keypair<R: Rng + CryptoRng>(mut rng: R) -> (PublicKey, PrivateKey) {
+    let (public_params, master_key) = bbg::setup(&mut rng);
+    let root_key = bbg::keygen(&mut rng, &public_params, &master_key, NodeName::ROOT);
     let public = PublicKey {
-        inner_key: inner_pk,
-        current_name: bte::NodeName::ROOT,
+        inner_key: public_params.clone(),
+        current_name: NodeName::ROOT,
     };
     let private = PrivateKey {
-        public_key: inner_pk,
-        keystack: vec![inner_sk],
-        current_name: bte::NodeName::ROOT,
+        public_params,
+        keystack: vec![root_key],
+        current_name: NodeName::ROOT,
     };
     (public, private)
 }
@@ -172,11 +178,11 @@ mod test {
     fn public_key_ratchet() {
         let (mut pk, _) = generate_keypair(rand::thread_rng());
         pk.ratchet().unwrap();
-        assert_eq!(pk.current_name, bte::NodeName::new(1, 0));
+        assert_eq!(pk.current_name, NodeName::new(1, 0));
         for _ in 0..32 {
             pk.ratchet().unwrap();
         }
-        assert_eq!(pk.current_name, bte::NodeName::new(32, 1));
+        assert_eq!(pk.current_name, NodeName::new(32, 1));
     }
 
     #[test]
@@ -184,11 +190,11 @@ mod test {
         let mut rng = rand::thread_rng();
         let (_, mut sk) = generate_keypair(&mut rng);
         sk.ratchet(&mut rng).unwrap();
-        assert_eq!(sk.current_name, bte::NodeName::new(1, 0));
+        assert_eq!(sk.current_name, NodeName::new(1, 0));
         for _ in 0..32 {
             sk.ratchet(&mut rng).unwrap();
         }
-        assert_eq!(sk.current_name, bte::NodeName::new(32, 1));
+        assert_eq!(sk.current_name, NodeName::new(32, 1));
     }
 
     #[test]

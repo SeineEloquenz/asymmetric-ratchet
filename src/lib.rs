@@ -40,6 +40,7 @@ use thiserror::Error;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[allow(unused_variables, dead_code)]
 mod bte;
 mod bbg;
 mod nodename;
@@ -140,18 +141,38 @@ impl PrivateKey {
     }
 }
 
+/// Generates a new key pair "at the origin".
+///
+/// This returns a key pair where each key is in epoch 0.
+pub fn generate_keypair<R: Rng + CryptoRng>(rng: R) -> (PublicKey, PrivateKey) {
+    generate_keypair_in_epoch(rng, 0)
+}
+
 /// Generates a new key pair.
-pub fn generate_keypair<R: Rng + CryptoRng>(mut rng: R) -> (PublicKey, PrivateKey) {
+///
+/// Both keys are fast-forwarded to be in the given epoch. Note that fast forwarding is only
+/// possible during the key generation, as we will lose the master key afterwards (otherwise
+/// forward secrecy would be broken).
+pub fn generate_keypair_in_epoch<R: Rng + CryptoRng>(mut rng: R, epoch: u64) -> (PublicKey, PrivateKey) {
     let (public_params, master_key) = bbg::setup(&mut rng);
-    let root_key = bbg::keygen(&mut rng, &public_params, &master_key, NodeName::ROOT);
+    let current_name = NodeName::from_numbering(epoch);
+    let mut keystack = Vec::new();
+    keystack.extend(current_name.walk().filter_map(|name| {
+        if name == name.parent().left() {
+            Some(bbg::keygen(&mut rng, &public_params, &master_key, name.parent().right()))
+        } else {
+            None
+        }
+    }));
+    keystack.push(bbg::keygen(&mut rng, &public_params, &master_key, current_name));
     let public = PublicKey {
         inner_key: public_params.clone(),
-        current_name: NodeName::ROOT,
+        current_name,
     };
     let private = PrivateKey {
         public_params,
-        keystack: vec![root_key],
-        current_name: NodeName::ROOT,
+        keystack,
+        current_name,
     };
     (public, private)
 }
@@ -168,6 +189,8 @@ fn kdf(group_element: &Gt) -> [u8; 16] {
 #[cfg(test)]
 mod test {
     use super::*;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
 
     #[test]
     fn keypair_generation() {
@@ -215,6 +238,43 @@ mod test {
         let plain = sk.decrypt(cipher).unwrap();
         assert_eq!(plain, message);
     }
+
+    #[test]
+    fn message_roundtrip_epoch() {
+        let message: &[u8] = b"Hello, world!";
+
+        let mut rng = rand::thread_rng();
+        let (mut pk, mut sk) = generate_keypair_in_epoch(&mut rng, 2u64.pow(32) + 42);
+
+        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
+        let plain = sk.decrypt(cipher).unwrap();
+        assert_eq!(plain, message);
+
+        pk.ratchet().unwrap();
+        sk.ratchet(&mut rng).unwrap();
+
+        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
+        let plain = sk.decrypt(cipher).unwrap();
+        assert_eq!(plain, message);
+    }
+
+    #[test]
+    fn message_roundtrip_through_epochs() {
+        let message: &[u8] = b"Hello, world!";
+        let mut rng = ChaCha8Rng::from_seed([0; 32]);
+
+        let (mut pk, _) = generate_keypair(rng.clone());
+        let (_, sk) = generate_keypair_in_epoch(rng.clone(), 42);
+
+        for _ in 0..42 {
+            pk.ratchet().unwrap();
+        }
+
+        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
+        let plain = sk.decrypt(cipher).unwrap();
+        assert_eq!(plain, message);
+    }
+
 
     #[test]
     fn secret_key_too_advanced() {

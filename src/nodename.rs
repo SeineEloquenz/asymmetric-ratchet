@@ -80,4 +80,39 @@ impl NodeName {
         parents.reverse();
         parents.into_iter()
     }
+
+    pub fn from_numbering(mut number: u64) -> NodeName {
+        // Number of nodes: 2**33 - 1
+        assert!(number < 2u64.pow(33) - 1);
+        let mut node = NodeName::ROOT;
+        let mut cutoff = 2u64.pow(32);
+        while cutoff > 0 {
+            if number == 0 {
+                return node;
+            } else if number >= cutoff {
+                node = node.right();
+                number -= cutoff;
+            } else {
+                node = node.left();
+                number -= 1;
+            }
+            cutoff = cutoff / 2;
+        }
+        node
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn from_numbering_root() {
+        assert_eq!(NodeName::from_numbering(0), NodeName::ROOT);
+    }
+
+    #[test]
+    fn from_numbering_node() {
+        assert_eq!(NodeName::from_numbering(2u64.pow(32) + 1), NodeName::ROOT.right().left());
+    }
 }

@@ -19,7 +19,13 @@ const DEPTH: usize = 32;
 /* Y	1	[a1, b, g, g1]
  * Y	2	[a0, c, g2, g3, h]
  */
-pub type PublicParams = (G1Affine, G1Affine, G2Affine, G2Affine, ArrayVec<G2Affine, DEPTH>);
+pub type PublicParams = (
+    G1Affine,
+    G1Affine,
+    G2Affine,
+    G2Affine,
+    ArrayVec<G2Affine, DEPTH>,
+);
 pub type MasterKey = G2Affine;
 pub type PrivateKey = (G2Affine, G1Affine, ArrayVec<G2Affine, DEPTH>);
 pub type Message = Gt;
@@ -150,6 +156,19 @@ pub fn decrypt(public_params: &PublicParams, key: &PrivateKey, ciphertext: &Ciph
     a + pairing(&key.1, c) - pairing(b, &key.0)
 }
 
+pub fn link(public_params: &PublicParams, ciphertext: &Ciphertext, name: NodeName) -> bool {
+    let id = nodename_to_identity(name);
+    let z = (public_params
+        .4
+        .iter()
+        .zip(id.iter())
+        .map(|(h, i)| h * i)
+        .sum::<G2Projective>()
+        + public_params.3)
+        .into();
+    pairing(&ciphertext.1, &z) == pairing(&public_params.0, &ciphertext.2)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -174,11 +193,34 @@ mod test {
 
         let (params, master) = setup(&mut rng);
         let sk = keygen(&mut rng, &params, &master, NodeName::ROOT);
-        let sk = derive(&mut rng, &params, &sk, NodeName::ROOT, NodeName::ROOT.left());
-        let sk = derive(&mut rng, &params, &sk, NodeName::ROOT.left(), NodeName::ROOT.left().left());
-        let sk = derive(&mut rng, &params, &sk, NodeName::ROOT.left().left(), NodeName::ROOT.left().left().right());
+        let sk = derive(
+            &mut rng,
+            &params,
+            &sk,
+            NodeName::ROOT,
+            NodeName::ROOT.left(),
+        );
+        let sk = derive(
+            &mut rng,
+            &params,
+            &sk,
+            NodeName::ROOT.left(),
+            NodeName::ROOT.left().left(),
+        );
+        let sk = derive(
+            &mut rng,
+            &params,
+            &sk,
+            NodeName::ROOT.left().left(),
+            NodeName::ROOT.left().left().right(),
+        );
 
-        let cipher = encrypt(&mut rng, &params, NodeName::ROOT.left().left().right(), &message);
+        let cipher = encrypt(
+            &mut rng,
+            &params,
+            NodeName::ROOT.left().left().right(),
+            &message,
+        );
         let plain = decrypt(&params, &sk, &cipher);
 
         assert_eq!(plain, message);

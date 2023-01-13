@@ -4,7 +4,7 @@
 use arrayvec::ArrayVec;
 
 #[cfg(feature = "serde")]
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -113,6 +113,9 @@ mod test {
 
     #[test]
     fn from_numbering_node() {
-        assert_eq!(NodeName::from_numbering(2u64.pow(32) + 1), NodeName::ROOT.right().left());
+        assert_eq!(
+            NodeName::from_numbering(2u64.pow(32) + 1),
+            NodeName::ROOT.right().left()
+        );
     }
 }

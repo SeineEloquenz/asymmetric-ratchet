@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput, BatchSize};
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
 
 static PAYLOAD: &[u8] = include_bytes!("payload.txt");
 
@@ -17,7 +17,6 @@ fn bench_asym_ratchet(c: &mut Criterion) {
         b.iter(|| priv_key.ratchet(rand::thread_rng()))
     });
     group.finish();
-
 
     let (pub_key, priv_key) = asym_ratchet::generate_keypair(rand::thread_rng());
 
@@ -39,7 +38,11 @@ fn bench_asym_ratchet(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
             b.iter_batched(
-                || pub_key.encrypt(rand::thread_rng(), (&PAYLOAD[..size]).to_vec()).unwrap(),
+                || {
+                    pub_key
+                        .encrypt(rand::thread_rng(), (&PAYLOAD[..size]).to_vec())
+                        .unwrap()
+                },
                 |input| priv_key.decrypt(input),
                 BatchSize::SmallInput,
             )

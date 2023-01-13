@@ -40,9 +40,9 @@ use thiserror::Error;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+mod bbg;
 #[allow(unused_variables, dead_code)]
 mod bte;
-mod bbg;
 mod nodename;
 
 pub use nodename::NodeName;
@@ -87,14 +87,26 @@ impl PublicKey {
     }
 
     /// Encrypt the given payload.
-    pub fn encrypt<R: Rng + CryptoRng>(&self, mut rng: R, mut payload: Vec<u8>) -> Result<Ciphertext, RatchetError> {
+    pub fn encrypt<R: Rng + CryptoRng>(
+        &self,
+        mut rng: R,
+        mut payload: Vec<u8>,
+    ) -> Result<Ciphertext, RatchetError> {
         let key = Gt::random(&mut rng);
         let aes_key = kdf(&key);
         let mut cipher = Aes128Ctr64LE::new(&aes_key.into(), &IV.into());
         cipher.apply_keystream(&mut payload);
 
         let hidden_key = bbg::encrypt(&mut rng, &self.inner_key, self.current_name, &key);
-        Ok(Ciphertext { hidden_key, payload })
+        Ok(Ciphertext {
+            hidden_key,
+            payload,
+        })
+    }
+
+    /// Checks whether the given ciphertext has been created with the public key.
+    pub fn affiliated(&self, ciphertext: &Ciphertext) -> bool {
+        bbg::link(&self.inner_key, &ciphertext.hidden_key, self.current_name)
     }
 }
 
@@ -122,8 +134,20 @@ impl PrivateKey {
         let next_name = self.current_name.next().ok_or(RatchetError::Exhausted)?;
         let current_key = self.keystack.pop().unwrap();
         if !self.current_name.is_leaf() {
-            let left = bbg::derive(&mut rng, &self.public_params, &current_key, self.current_name, self.current_name.left());
-            let right = bbg::derive(&mut rng, &self.public_params, &current_key, self.current_name, self.current_name.right());
+            let left = bbg::derive(
+                &mut rng,
+                &self.public_params,
+                &current_key,
+                self.current_name,
+                self.current_name.left(),
+            );
+            let right = bbg::derive(
+                &mut rng,
+                &self.public_params,
+                &current_key,
+                self.current_name,
+                self.current_name.right(),
+            );
             self.keystack.push(right);
             self.keystack.push(left);
         }
@@ -132,7 +156,11 @@ impl PrivateKey {
     }
 
     pub fn decrypt(&self, mut ciphertext: Ciphertext) -> Result<Vec<u8>, RatchetError> {
-        let key = bbg::decrypt(&self.public_params, self.keystack.last().unwrap(), &ciphertext.hidden_key);
+        let key = bbg::decrypt(
+            &self.public_params,
+            self.keystack.last().unwrap(),
+            &ciphertext.hidden_key,
+        );
         let aes_key = kdf(&key);
         let mut cipher = Aes128Ctr64LE::new(&aes_key.into(), &IV.into());
         cipher.apply_keystream(&mut ciphertext.payload);
@@ -153,18 +181,31 @@ pub fn generate_keypair<R: Rng + CryptoRng>(rng: R) -> (PublicKey, PrivateKey) {
 /// Both keys are fast-forwarded to be in the given epoch. Note that fast forwarding is only
 /// possible during the key generation, as we will lose the master key afterwards (otherwise
 /// forward secrecy would be broken).
-pub fn generate_keypair_in_epoch<R: Rng + CryptoRng>(mut rng: R, epoch: u64) -> (PublicKey, PrivateKey) {
+pub fn generate_keypair_in_epoch<R: Rng + CryptoRng>(
+    mut rng: R,
+    epoch: u64,
+) -> (PublicKey, PrivateKey) {
     let (public_params, master_key) = bbg::setup(&mut rng);
     let current_name = NodeName::from_numbering(epoch);
     let mut keystack = Vec::new();
     keystack.extend(current_name.walk().filter_map(|name| {
         if name == name.parent().left() {
-            Some(bbg::keygen(&mut rng, &public_params, &master_key, name.parent().right()))
+            Some(bbg::keygen(
+                &mut rng,
+                &public_params,
+                &master_key,
+                name.parent().right(),
+            ))
         } else {
             None
         }
     }));
-    keystack.push(bbg::keygen(&mut rng, &public_params, &master_key, current_name));
+    keystack.push(bbg::keygen(
+        &mut rng,
+        &public_params,
+        &master_key,
+        current_name,
+    ));
     let public = PublicKey {
         inner_key: public_params.clone(),
         current_name,
@@ -275,7 +316,6 @@ mod test {
         assert_eq!(plain, message);
     }
 
-
     #[test]
     fn secret_key_too_advanced() {
         let message: &[u8] = b"Hello, world!";
@@ -288,5 +328,42 @@ mod test {
         let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
         let plain = sk.decrypt(cipher).unwrap();
         assert_ne!(plain, message);
+    }
+
+    #[test]
+    fn public_key_affiliated() {
+        let message: &[u8] = b"Hello, world!";
+
+        let mut rng = rand::thread_rng();
+        let (pk, _) = generate_keypair(&mut rng);
+
+        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
+        assert!(pk.affiliated(&cipher));
+    }
+
+    #[test]
+    fn public_key_not_affiliated() {
+        let message: &[u8] = b"Hello, world!";
+
+        let mut rng = rand::thread_rng();
+        let (pk, _) = generate_keypair(&mut rng);
+        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
+
+        let (pk, _) = generate_keypair(&mut rng);
+        assert!(!pk.affiliated(&cipher));
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_serialize() {
+        let message: &[u8] = b"Hello, world!";
+
+        let mut rng = rand::thread_rng();
+        let (mut pk, mut sk) = generate_keypair(&mut rng);
+
+        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
+        let serialized = bincode::serialize(&cipher).unwrap();
+
+        assert_eq!(serialized.len(), 728 + message.len());
     }
 }

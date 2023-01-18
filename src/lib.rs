@@ -43,6 +43,8 @@ use serde::{Deserialize, Serialize};
 mod bbg;
 #[allow(unused_variables, dead_code)]
 mod bte;
+#[cfg(feature = "serde")]
+pub mod keyprivate;
 mod nodename;
 
 pub use nodename::NodeName;

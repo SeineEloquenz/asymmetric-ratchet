@@ -30,6 +30,7 @@ pub type MasterKey = G2Affine;
 pub type PrivateKey = (G2Affine, G1Affine, ArrayVec<G2Affine, DEPTH>);
 pub type Message = Gt;
 pub type Ciphertext = (Gt, G1Affine, G2Affine);
+pub type PreDiffieKey = (G1Affine, G2Affine);
 
 fn nodename_to_identity(name: NodeName) -> Vec<Scalar> {
     let mut result = Vec::new();
@@ -156,7 +157,20 @@ pub fn decrypt(public_params: &PublicParams, key: &PrivateKey, ciphertext: &Ciph
     a + pairing(&key.1, c) - pairing(b, &key.0)
 }
 
-pub fn link(public_params: &PublicParams, ciphertext: &Ciphertext, name: NodeName) -> bool {
+pub fn pre_diffie_hellman<R: Rng>(
+    rng: R,
+    public_params: &PublicParams,
+    name: NodeName,
+) -> (Gt, PreDiffieKey) {
+    let c = encrypt(rng, public_params, name, &Gt::identity());
+    (c.0, (c.1, c.2))
+}
+
+pub fn post_diffie_hellman(key: &PrivateKey, pre_key: &PreDiffieKey) -> Gt {
+    pairing(&pre_key.0, &key.0) - pairing(&key.1, &pre_key.1)
+}
+
+pub fn link_diffie(public_params: &PublicParams, pre_diffie: &PreDiffieKey, name: NodeName) -> bool {
     let id = nodename_to_identity(name);
     let z = (public_params
         .4
@@ -166,7 +180,11 @@ pub fn link(public_params: &PublicParams, ciphertext: &Ciphertext, name: NodeNam
         .sum::<G2Projective>()
         + public_params.3)
         .into();
-    pairing(&ciphertext.1, &z) == pairing(&public_params.0, &ciphertext.2)
+    pairing(&pre_diffie.0, &z) == pairing(&public_params.0, &pre_diffie.1)
+}
+
+pub fn link(public_params: &PublicParams, ciphertext: &Ciphertext, name: NodeName) -> bool {
+    link_diffie(public_params, &(ciphertext.1, ciphertext.2), name)
 }
 
 #[cfg(test)]

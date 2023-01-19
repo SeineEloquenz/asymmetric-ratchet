@@ -62,7 +62,7 @@ pub enum RatchetError {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Ciphertext {
-    hidden_key: bbg::Ciphertext,
+    hidden_key: bbg::PreDiffieKey,
     payload: Vec<u8>,
 }
 
@@ -94,12 +94,11 @@ impl PublicKey {
         mut rng: R,
         mut payload: Vec<u8>,
     ) -> Result<Ciphertext, RatchetError> {
-        let key = Gt::random(&mut rng);
+        let (key, hidden_key) = bbg::pre_diffie_hellman(&mut rng, &self.inner_key, self.current_name);
         let aes_key = kdf(&key);
         let mut cipher = Aes128Ctr64LE::new(&aes_key.into(), &IV.into());
         cipher.apply_keystream(&mut payload);
 
-        let hidden_key = bbg::encrypt(&mut rng, &self.inner_key, self.current_name, &key);
         Ok(Ciphertext {
             hidden_key,
             payload,
@@ -108,7 +107,7 @@ impl PublicKey {
 
     /// Checks whether the given ciphertext has been created with the public key.
     pub fn affiliated(&self, ciphertext: &Ciphertext) -> bool {
-        bbg::link(&self.inner_key, &ciphertext.hidden_key, self.current_name)
+        bbg::link_diffie(&self.inner_key, &ciphertext.hidden_key, self.current_name)
     }
 }
 
@@ -158,11 +157,7 @@ impl PrivateKey {
     }
 
     pub fn decrypt(&self, mut ciphertext: Ciphertext) -> Result<Vec<u8>, RatchetError> {
-        let key = bbg::decrypt(
-            &self.public_params,
-            self.keystack.last().unwrap(),
-            &ciphertext.hidden_key,
-        );
+        let key = bbg::post_diffie_hellman(self.keystack.last().unwrap(), &ciphertext.hidden_key);
         let aes_key = kdf(&key);
         let mut cipher = Aes128Ctr64LE::new(&aes_key.into(), &IV.into());
         cipher.apply_keystream(&mut ciphertext.payload);
@@ -366,6 +361,7 @@ mod test {
         let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
         let serialized = bincode::serialize(&cipher).unwrap();
 
-        assert_eq!(serialized.len(), 728 + message.len());
+        // Take care of the 8 extra bytes for the vec length thanks to bincode.
+        assert_eq!(serialized.len(), 144 + 8 + message.len());
     }
 }

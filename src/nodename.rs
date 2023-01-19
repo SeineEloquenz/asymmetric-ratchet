@@ -63,6 +63,10 @@ impl NodeName {
         self.0
     }
 
+    pub fn is_empty(self) -> bool {
+        self.len() == 0
+    }
+
     pub fn path(self) -> u32 {
         self.1
     }
@@ -73,7 +77,7 @@ impl NodeName {
 
     pub fn walk(mut self) -> impl Iterator<Item = NodeName> {
         let mut parents = ArrayVec::<NodeName, 32>::new();
-        while self.len() > 0 {
+        while !self.is_empty() {
             parents.push(self);
             self = self.parent();
         }
@@ -96,7 +100,7 @@ impl NodeName {
                 node = node.left();
                 number -= 1;
             }
-            cutoff = cutoff / 2;
+            cutoff /= 2;
         }
         node
     }
@@ -105,6 +109,30 @@ impl NodeName {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn left_child() {
+        assert_eq!(NodeName::ROOT.left(), NodeName::new(1, 0));
+    }
+
+    #[test]
+    fn right_child() {
+        assert_eq!(NodeName::ROOT.right(), NodeName::new(1, 1));
+    }
+
+    #[test]
+    fn walk() {
+        let node = NodeName::ROOT.left().right().right();
+        let walk = node.walk().collect::<Vec<_>>();
+        assert_eq!(
+            walk,
+            vec![
+                NodeName::ROOT.left(),
+                NodeName::ROOT.left().right(),
+                NodeName::ROOT.left().right().right()
+            ]
+        );
+    }
 
     #[test]
     fn from_numbering_root() {

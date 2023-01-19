@@ -52,7 +52,8 @@ fn bench_asym_ratchet(c: &mut Criterion) {
 
     #[cfg(feature = "serde")]
     {
-        let (pub_key, priv_key) = asym_ratchet::keyprivate::wrap_keypair(rand::thread_rng(), (pub_key, priv_key));
+        let (pub_key, priv_key) =
+            asym_ratchet::keyprivate::wrap_keypair(rand::thread_rng(), (pub_key, priv_key));
 
         let mut group = c.benchmark_group("asym_ratchet/keyprivate/encrypt");
         for size in (512usize..=10240).step_by(512) {

@@ -37,9 +37,9 @@ fn nodename_to_identity(name: NodeName) -> Vec<Scalar> {
     let path = name.path();
     for i in 1..=name.len() {
         let mut hasher = Sha3_256::new();
-        hasher.update(&[i]);
+        hasher.update([i]);
         let current = (path >> (name.len() - i)) & 1;
-        hasher.update(&[current as u8]);
+        hasher.update([current as u8]);
 
         let output: [u8; 32] = hasher.finalize().into();
         let raw: [u64; 4] = output
@@ -152,7 +152,7 @@ pub fn encrypt<R: Rng>(
     )
 }
 
-pub fn decrypt(public_params: &PublicParams, key: &PrivateKey, ciphertext: &Ciphertext) -> Message {
+pub fn decrypt(key: &PrivateKey, ciphertext: &Ciphertext) -> Message {
     let (a, b, c) = ciphertext;
     a + pairing(&key.1, c) - pairing(b, &key.0)
 }
@@ -170,7 +170,11 @@ pub fn post_diffie_hellman(key: &PrivateKey, pre_key: &PreDiffieKey) -> Gt {
     pairing(&pre_key.0, &key.0) - pairing(&key.1, &pre_key.1)
 }
 
-pub fn link_diffie(public_params: &PublicParams, pre_diffie: &PreDiffieKey, name: NodeName) -> bool {
+pub fn link_diffie(
+    public_params: &PublicParams,
+    pre_diffie: &PreDiffieKey,
+    name: NodeName,
+) -> bool {
     let id = nodename_to_identity(name);
     let z = (public_params
         .4
@@ -199,7 +203,7 @@ mod test {
         let (params, master) = setup(&mut rng);
         let sk = keygen(&mut rng, &params, &master, NodeName::ROOT);
         let cipher = encrypt(&mut rng, &params, NodeName::ROOT, &message);
-        let plain = decrypt(&params, &sk, &cipher);
+        let plain = decrypt(&sk, &cipher);
 
         assert_eq!(plain, message);
     }
@@ -239,7 +243,7 @@ mod test {
             NodeName::ROOT.left().left().right(),
             &message,
         );
-        let plain = decrypt(&params, &sk, &cipher);
+        let plain = decrypt(&sk, &cipher);
 
         assert_eq!(plain, message);
     }

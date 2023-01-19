@@ -32,7 +32,6 @@
 //! the callers to ensure that the payload length does not leak information.
 use aes::cipher::{KeyIvInit, StreamCipher};
 use bls12_381::Gt;
-use group::Group;
 use rand::{CryptoRng, Rng};
 use sha3::Digest;
 use thiserror::Error;
@@ -40,9 +39,9 @@ use thiserror::Error;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+// The code implements a bit more functionality than we need
+#[allow(dead_code)]
 mod bbg;
-#[allow(unused_variables, dead_code)]
-mod bte;
 #[cfg(feature = "serde")]
 pub mod keyprivate;
 mod nodename;
@@ -94,7 +93,8 @@ impl PublicKey {
         mut rng: R,
         mut payload: Vec<u8>,
     ) -> Result<Ciphertext, RatchetError> {
-        let (key, hidden_key) = bbg::pre_diffie_hellman(&mut rng, &self.inner_key, self.current_name);
+        let (key, hidden_key) =
+            bbg::pre_diffie_hellman(&mut rng, &self.inner_key, self.current_name);
         let aes_key = kdf(&key);
         let mut cipher = Aes128Ctr64LE::new(&aes_key.into(), &IV.into());
         cipher.apply_keystream(&mut payload);

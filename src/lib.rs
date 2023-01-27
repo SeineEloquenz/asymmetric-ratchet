@@ -39,6 +39,7 @@ use thiserror::Error;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+mod bkp;
 // The code implements a bit more functionality than we need
 #[allow(dead_code)]
 mod bbg;
@@ -356,7 +357,7 @@ mod test {
         let message: &[u8] = b"Hello, world!";
 
         let mut rng = rand::thread_rng();
-        let (mut pk, mut sk) = generate_keypair(&mut rng);
+        let (pk, _) = generate_keypair(&mut rng);
 
         let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
         let serialized = bincode::serialize(&cipher).unwrap();

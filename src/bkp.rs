@@ -315,6 +315,55 @@ pub fn hibe_dec(sk: &HibeUserSecretKey, c: &HibeCiphertext) -> Gt {
     key
 }
 
+pub fn hibe_usk_del<R: Rng>(
+    mut rng: R,
+    usk: &HibeUserSecretKey,
+    udk: &HibeUserDeriveKey,
+    id: &[Scalar],
+    next_id: Scalar,
+) -> (HibeUserSecretKey, HibeUserDeriveKey) {
+    #![allow(non_snake_case)]
+    // The paper says to loop from l(id'), but since we're actually cutting away the elements here,
+    // it's always the nextmost one.
+    let p = 0;
+    let id = id.iter().chain(iter::once(&next_id)).collect::<Vec<_>>();
+    let u_hat = usk.1 + udk.3[p].0 * next_id.0;
+    let v_hat = matrix![G2Affine::from(usk.2[0] + udk.3[p].2[0] * next_id.0)];
+    let u_1_hat = matrix![G2Affine::from(udk.1[0] + udk.3[p].1[0] * next_id.0)];
+    let V_hat = matrix![G2Affine::from(udk.2[0] + udk.3[p].3[0] * next_id.0)];
+
+    let s_prime = matrix![Scalar::random(&mut rng)];
+    let S = matrix![Scalar::random(&mut rng)];
+    let t_prime = matrix![
+        G2Affine::from(usk.0[0] + udk.0[0] * s_prime[0].0);
+        G2Affine::from(usk.0[1] + udk.0[1] * s_prime[0].0);
+    ];
+    let T_prime = matrix![
+        G2Affine::from(udk.0[0] * S[0].0);
+        G2Affine::from(udk.0[1] * S[0].0);
+    ];
+    let u_prime = G2Affine::from(u_hat + u_1_hat[0] * s_prime[0].0);
+    let u_1_prime = matrix![G2Affine::from(u_1_hat[0] * S[0].0)];
+    let v_prime = matrix![G2Affine::from(v_hat[0] + V_hat[0] * s_prime[0].0)];
+    let V_prime = matrix![G2Affine::from(V_hat[0] * S[0].0)];
+
+    let mut tail = Vec::new();
+
+    for (di, Di, ei, Ei) in &udk.3[1..] {
+        let di_prime = G2Affine::from(di + Di[0] * s_prime[0].0);
+        let Di_prime = matrix![G2Affine::from(Di[0] * S[0].0)];
+        let ei_prime = vector![G2Affine::from(ei[0] + Ei[0] * s_prime[0].0)];
+        let Ei_prime = matrix![G2Affine::from(Ei[0] * S[0].0)];
+
+        tail.push((di_prime, Di_prime, ei_prime, Ei_prime));
+    }
+
+    let usk_prime = (t_prime, u_prime, v_prime);
+    let udk_prime = (T_prime, u_1_prime, V_prime, tail);
+
+    (usk_prime, udk_prime)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -355,6 +404,7 @@ mod test {
             &sk,
             &[Scalar::random(rand::thread_rng())],
         );
+        assert_eq!(udk.3.len(), MAX_L - 1);
     }
 
     #[test]
@@ -367,5 +417,68 @@ mod test {
         let (key1, cipher) = hibe_enc(&mut rng, &pk, id);
         let key2 = hibe_dec(&usk, &cipher);
         assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn test_hibe_enc_dec_wrong_id() {
+        let mut rng = rand::thread_rng();
+        let (pk, sk) = hibe_gen(&mut rng);
+        let id = &[Scalar::random(rand::thread_rng())];
+        let (usk, _) = hibe_usk_gen(&mut rng, &sk, id);
+
+        let id = &[Scalar::random(rand::thread_rng())];
+        let (key1, cipher) = hibe_enc(&mut rng, &pk, id);
+        let key2 = hibe_dec(&usk, &cipher);
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_hibe_delegated() {
+        let mut rng = rand::thread_rng();
+        let (pk, sk) = hibe_gen(&mut rng);
+        let id = &[Scalar::random(&mut rng), Scalar::random(&mut rng)];
+
+        let (usk, udk) = hibe_usk_gen(&mut rng, &sk, &id[..1]);
+        let (usk, _) = hibe_usk_del(&mut rng, &usk, &udk, &id[..1], id[1]);
+        let (key1, cipher) = hibe_enc(&mut rng, &pk, id);
+        let key2 = hibe_dec(&usk, &cipher);
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn test_hibe_delegated_twice() {
+        let mut rng = rand::thread_rng();
+        let (pk, sk) = hibe_gen(&mut rng);
+        let id = &[
+            Scalar::random(&mut rng),
+            Scalar::random(&mut rng),
+            Scalar::random(&mut rng),
+        ];
+
+        let (usk, udk) = hibe_usk_gen(&mut rng, &sk, &id[..1]);
+        let (usk, udk) = hibe_usk_del(&mut rng, &usk, &udk, &id[..1], id[1]);
+        let (usk, _) = hibe_usk_del(&mut rng, &usk, &udk, &id[..2], id[2]);
+        let (key1, cipher) = hibe_enc(&mut rng, &pk, id);
+        let key2 = hibe_dec(&usk, &cipher);
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn test_hibe_delegated_wrong() {
+        let mut rng = rand::thread_rng();
+        let (pk, sk) = hibe_gen(&mut rng);
+        let id = &[Scalar::random(&mut rng), Scalar::random(&mut rng)];
+
+        let (usk, udk) = hibe_usk_gen(&mut rng, &sk, &id[..1]);
+        let (usk, _) = hibe_usk_del(
+            &mut rng,
+            &usk,
+            &udk,
+            &id[..1],
+            Scalar::random(rand::thread_rng()),
+        );
+        let (key1, cipher) = hibe_enc(&mut rng, &pk, id);
+        let key2 = hibe_dec(&usk, &cipher);
+        assert_ne!(key1, key2);
     }
 }

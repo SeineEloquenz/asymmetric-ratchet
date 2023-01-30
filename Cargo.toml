@@ -24,7 +24,7 @@ thiserror = "1.0.37"
 
 [features]
 default = ["serde"]
-serde = ["dep:serde", "arrayvec/serde", "bls12_381/serde", "curve25519-dalek/serde"]
+serde = ["dep:serde", "arrayvec/serde", "bls12_381/serde", "curve25519-dalek/serde", "nalgebra/serde-serialize"]
 
 [dev-dependencies]
 criterion = "0.4.0"

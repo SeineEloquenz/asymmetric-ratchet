@@ -14,7 +14,7 @@ use num_traits::identities::{One, Zero};
 use rand::{distributions::Distribution, Rng};
 use std::{fmt::Debug, iter, ops::Mul};
 
-const MAX_L: usize = 32;
+const MAX_L: usize = 33;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct MatrixDistribution;

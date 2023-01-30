@@ -30,7 +30,10 @@
 //!
 //! Note that this implementation does not apply padding to the input payload! It is the duty of
 //! the callers to ensure that the payload length does not leak information.
+use std::iter;
+
 use aes::cipher::{KeyIvInit, StreamCipher};
+use bkp::Scalar;
 use bls12_381::Gt;
 use rand::{CryptoRng, Rng};
 use sha3::Digest;
@@ -62,7 +65,7 @@ pub enum RatchetError {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Ciphertext {
-    hidden_key: bbg::PreDiffieKey,
+    hidden_key: bkp::HibeCiphertext,
     payload: Vec<u8>,
 }
 
@@ -70,7 +73,7 @@ pub struct Ciphertext {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PublicKey {
-    inner_key: bbg::PublicParams,
+    inner_key: bkp::HibePublicKey,
     current_name: NodeName,
 }
 
@@ -94,8 +97,11 @@ impl PublicKey {
         mut rng: R,
         mut payload: Vec<u8>,
     ) -> Result<Ciphertext, RatchetError> {
-        let (key, hidden_key) =
-            bbg::pre_diffie_hellman(&mut rng, &self.inner_key, self.current_name);
+        let (key, hidden_key) = bkp::hibe_enc(
+            &mut rng,
+            &self.inner_key,
+            &identity_to_scalar(self.current_name),
+        );
         let aes_key = kdf(&key);
         let mut cipher = Aes128Ctr64LE::new(&aes_key.into(), &IV.into());
         cipher.apply_keystream(&mut payload);
@@ -105,19 +111,13 @@ impl PublicKey {
             payload,
         })
     }
-
-    /// Checks whether the given ciphertext has been created with the public key.
-    pub fn affiliated(&self, ciphertext: &Ciphertext) -> bool {
-        bbg::link_diffie(&self.inner_key, &ciphertext.hidden_key, self.current_name)
-    }
 }
 
 /// Structure representing a ratchetable private key.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrivateKey {
-    public_params: bbg::PublicParams,
-    keystack: Vec<bbg::PrivateKey>,
+    keystack: Vec<(bkp::HibeUserSecretKey, bkp::HibeUserDeriveKey)>,
     current_name: NodeName,
 }
 
@@ -136,19 +136,21 @@ impl PrivateKey {
         let next_name = self.current_name.next().ok_or(RatchetError::Exhausted)?;
         let current_key = self.keystack.pop().unwrap();
         if !self.current_name.is_leaf() {
-            let left = bbg::derive(
+            let left = bkp::hibe_usk_del(
                 &mut rng,
-                &self.public_params,
-                &current_key,
-                self.current_name,
-                self.current_name.left(),
+                &current_key.0,
+                &current_key.1,
+                &identity_to_scalar(self.current_name),
+                *identity_to_scalar(self.current_name.left()).last().unwrap(),
             );
-            let right = bbg::derive(
+            let right = bkp::hibe_usk_del(
                 &mut rng,
-                &self.public_params,
-                &current_key,
-                self.current_name,
-                self.current_name.right(),
+                &current_key.0,
+                &current_key.1,
+                &identity_to_scalar(self.current_name),
+                *identity_to_scalar(self.current_name.right())
+                    .last()
+                    .unwrap(),
             );
             self.keystack.push(right);
             self.keystack.push(left);
@@ -158,7 +160,7 @@ impl PrivateKey {
     }
 
     pub fn decrypt(&self, mut ciphertext: Ciphertext) -> Result<Vec<u8>, RatchetError> {
-        let key = bbg::post_diffie_hellman(self.keystack.last().unwrap(), &ciphertext.hidden_key);
+        let key = bkp::hibe_dec(&self.keystack.last().unwrap().0, &ciphertext.hidden_key);
         let aes_key = kdf(&key);
         let mut cipher = Aes128Ctr64LE::new(&aes_key.into(), &IV.into());
         cipher.apply_keystream(&mut ciphertext.payload);
@@ -183,37 +185,42 @@ pub fn generate_keypair_in_epoch<R: Rng + CryptoRng>(
     mut rng: R,
     epoch: u64,
 ) -> (PublicKey, PrivateKey) {
-    let (public_params, master_key) = bbg::setup(&mut rng);
+    let (public_key, master_key) = bkp::hibe_gen(&mut rng);
     let current_name = NodeName::from_numbering(epoch);
     let mut keystack = Vec::new();
     keystack.extend(current_name.walk().filter_map(|name| {
         if name == name.parent().left() {
-            Some(bbg::keygen(
+            Some(bkp::hibe_usk_gen(
                 &mut rng,
-                &public_params,
                 &master_key,
-                name.parent().right(),
+                &identity_to_scalar(name.parent().right()),
             ))
         } else {
             None
         }
     }));
-    keystack.push(bbg::keygen(
+    keystack.push(bkp::hibe_usk_gen(
         &mut rng,
-        &public_params,
         &master_key,
-        current_name,
+        &identity_to_scalar(current_name),
     ));
     let public = PublicKey {
-        inner_key: public_params.clone(),
+        inner_key: public_key,
         current_name,
     };
     let private = PrivateKey {
-        public_params,
         keystack,
         current_name,
     };
     (public, private)
+}
+
+fn identity_to_scalar(id: NodeName) -> Vec<Scalar> {
+    id.walk()
+        .chain(iter::once(id))
+        // Ensure that our ID is not 0, as that would break the hierarchical encryption
+        .map(|i| bls12_381::Scalar::from(i.path() as u64 + 0x42).into())
+        .collect()
 }
 
 fn kdf(group_element: &Gt) -> [u8; 16] {
@@ -329,29 +336,6 @@ mod test {
     }
 
     #[test]
-    fn public_key_affiliated() {
-        let message: &[u8] = b"Hello, world!";
-
-        let mut rng = rand::thread_rng();
-        let (pk, _) = generate_keypair(&mut rng);
-
-        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
-        assert!(pk.affiliated(&cipher));
-    }
-
-    #[test]
-    fn public_key_not_affiliated() {
-        let message: &[u8] = b"Hello, world!";
-
-        let mut rng = rand::thread_rng();
-        let (pk, _) = generate_keypair(&mut rng);
-        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
-
-        let (pk, _) = generate_keypair(&mut rng);
-        assert!(!pk.affiliated(&cipher));
-    }
-
-    #[test]
     #[cfg(feature = "serde")]
     fn test_serialize() {
         let message: &[u8] = b"Hello, world!";
@@ -363,6 +347,6 @@ mod test {
         let serialized = bincode::serialize(&cipher).unwrap();
 
         // Take care of the 8 extra bytes for the vec length thanks to bincode.
-        assert_eq!(serialized.len(), 144 + 8 + message.len());
+        assert_eq!(serialized.len(), 208 + 8 + message.len());
     }
 }

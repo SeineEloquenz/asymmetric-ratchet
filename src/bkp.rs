@@ -5,14 +5,13 @@
 use bls12_381::{pairing, G1Affine, G1Projective, G2Affine, G2Projective, Gt};
 use derive_more::{Add, AddAssign, From, Into, Mul, MulAssign, Sub, Sum};
 use ff::Field;
-use group::Group;
 use nalgebra::{
     matrix, vector, Dim, Matrix, Matrix1, Matrix1x2, Matrix2x1, OMatrix, RawStorage, Vector1,
     Vector2,
 };
 use num_traits::identities::{One, Zero};
 use rand::{distributions::Distribution, Rng};
-use std::{fmt::Debug, iter, ops::Mul};
+use std::{fmt::Debug, iter, thread};
 
 const MAX_L: usize = 33;
 
@@ -309,10 +308,18 @@ pub fn hibe_enc<R: Rng>(mut rng: R, pk: &HibePublicKey, id: &[Scalar]) -> (Gt, H
 }
 
 pub fn hibe_dec(sk: &HibeUserSecretKey, c: &HibeCiphertext) -> Gt {
-    let key = pairing(&c.0[0], &sk.2[0]) + pairing(&c.0[1], &sk.1)
-        - pairing(&c.1[0], &sk.0[0])
-        - pairing(&c.1[1], &sk.0[1]);
-    key
+    thread::scope(|s| {
+        let k1 = s.spawn(|| pairing(&c.0[0], &sk.2[0]));
+        let k2 = s.spawn(|| pairing(&c.0[1], &sk.1));
+        let k3 = s.spawn(|| pairing(&c.1[0], &sk.0[0]));
+        let k4 = pairing(&c.1[1], &sk.0[1]);
+
+        let key = k1.join().unwrap()
+            + k2.join().unwrap()
+            - k3.join().unwrap()
+            - k4;
+        key
+    })
 }
 
 pub fn hibe_usk_del<R: Rng>(

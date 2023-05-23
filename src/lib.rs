@@ -42,12 +42,8 @@ use thiserror::Error;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-mod bkp;
-// The code implements a bit more functionality than we need
 #[allow(dead_code)]
-mod bbg;
-#[cfg(feature = "serde")]
-pub mod keyprivate;
+mod bkp;
 mod nodename;
 
 pub use nodename::NodeName;
@@ -140,14 +136,12 @@ impl PrivateKey {
                 &mut rng,
                 &current_key.0,
                 &current_key.1,
-                &identity_to_scalar(self.current_name),
                 *identity_to_scalar(self.current_name.left()).last().unwrap(),
             );
             let right = bkp::hibe_usk_del(
                 &mut rng,
                 &current_key.0,
                 &current_key.1,
-                &identity_to_scalar(self.current_name),
                 *identity_to_scalar(self.current_name.right())
                     .last()
                     .unwrap(),

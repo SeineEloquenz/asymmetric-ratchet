@@ -49,42 +49,6 @@ fn bench_asym_ratchet(c: &mut Criterion) {
         });
     }
     group.finish();
-
-    #[cfg(feature = "serde")]
-    {
-        let (pub_key, priv_key) =
-            asym_ratchet::keyprivate::wrap_keypair(rand::thread_rng(), (pub_key, priv_key));
-
-        let mut group = c.benchmark_group("asym_ratchet/keyprivate/encrypt");
-        for size in (512usize..=10240).step_by(512) {
-            group.throughput(Throughput::Bytes(size as u64));
-            group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
-                b.iter_batched(
-                    || (&PAYLOAD[..size]).to_vec(),
-                    |input| pub_key.encrypt(rand::thread_rng(), input).unwrap(),
-                    BatchSize::SmallInput,
-                )
-            });
-        }
-        group.finish();
-
-        let mut group = c.benchmark_group("asym_ratchet/keyprivate/decrypt");
-        for size in (512usize..=10240).step_by(512) {
-            group.throughput(Throughput::Bytes(size as u64));
-            group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
-                b.iter_batched(
-                    || {
-                        pub_key
-                            .encrypt(rand::thread_rng(), (&PAYLOAD[..size]).to_vec())
-                            .unwrap()
-                    },
-                    |input| priv_key.decrypt(input),
-                    BatchSize::SmallInput,
-                )
-            });
-        }
-        group.finish();
-    }
 }
 
 criterion_group!(benches, bench_asym_ratchet);

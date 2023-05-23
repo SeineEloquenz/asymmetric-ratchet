@@ -117,7 +117,7 @@ pub fn mac_gen<R: Rng>(mut rng: R) -> MacSecret {
 
 fn mac_raw<R: Rng>(mut rng: R, key: &MacSecret, message: &[Scalar]) -> (Vector2<Scalar>, Scalar) {
     let s = vector![Scalar::random(&mut rng)];
-    let t = &key.0 * s;
+    let t = key.0 * s;
     // sum { m_i + x_i }
     let sum = message
         .iter()
@@ -326,14 +326,12 @@ pub fn hibe_usk_del<R: Rng>(
     mut rng: R,
     usk: &HibeUserSecretKey,
     udk: &HibeUserDeriveKey,
-    id: &[Scalar],
     next_id: Scalar,
 ) -> (HibeUserSecretKey, HibeUserDeriveKey) {
     #![allow(non_snake_case)]
     // The paper says to loop from l(id'), but since we're actually cutting away the elements here,
     // it's always the nextmost one.
     let p = 0;
-    let id = id.iter().chain(iter::once(&next_id)).collect::<Vec<_>>();
     let u_hat = usk.1 + udk.3[p].0 * next_id.0;
     let v_hat = matrix![G2Affine::from(usk.2[0] + udk.3[p].2[0] * next_id.0)];
     let u_1_hat = matrix![G2Affine::from(udk.1[0] + udk.3[p].1[0] * next_id.0)];
@@ -406,7 +404,7 @@ mod test {
     #[test]
     fn test_hibe_secret_gen() {
         let (_, sk) = hibe_gen(rand::thread_rng());
-        let (usk, udk) = hibe_usk_gen(
+        let (_usk, udk) = hibe_usk_gen(
             rand::thread_rng(),
             &sk,
             &[Scalar::random(rand::thread_rng())],
@@ -446,7 +444,7 @@ mod test {
         let id = &[Scalar::random(&mut rng), Scalar::random(&mut rng)];
 
         let (usk, udk) = hibe_usk_gen(&mut rng, &sk, &id[..1]);
-        let (usk, _) = hibe_usk_del(&mut rng, &usk, &udk, &id[..1], id[1]);
+        let (usk, _) = hibe_usk_del(&mut rng, &usk, &udk, id[1]);
         let (key1, cipher) = hibe_enc(&mut rng, &pk, id);
         let key2 = hibe_dec(&usk, &cipher);
         assert_eq!(key1, key2);
@@ -463,8 +461,8 @@ mod test {
         ];
 
         let (usk, udk) = hibe_usk_gen(&mut rng, &sk, &id[..1]);
-        let (usk, udk) = hibe_usk_del(&mut rng, &usk, &udk, &id[..1], id[1]);
-        let (usk, _) = hibe_usk_del(&mut rng, &usk, &udk, &id[..2], id[2]);
+        let (usk, udk) = hibe_usk_del(&mut rng, &usk, &udk, id[1]);
+        let (usk, _) = hibe_usk_del(&mut rng, &usk, &udk, id[2]);
         let (key1, cipher) = hibe_enc(&mut rng, &pk, id);
         let key2 = hibe_dec(&usk, &cipher);
         assert_eq!(key1, key2);
@@ -481,7 +479,6 @@ mod test {
             &mut rng,
             &usk,
             &udk,
-            &id[..1],
             Scalar::random(rand::thread_rng()),
         );
         let (key1, cipher) = hibe_enc(&mut rng, &pk, id);

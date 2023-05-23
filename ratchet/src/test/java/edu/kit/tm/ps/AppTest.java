@@ -37,4 +37,9 @@ public class AppTest
 
         assertArrayEquals(payload, dec);
     }
+
+    @Test(expected = RatchetException.class)
+    public void negativeEpochFails() throws RatchetException {
+        KeyGen.generateKeypair(-1);
+    }
 }

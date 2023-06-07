@@ -4,7 +4,23 @@ package edu.kit.tm.ps;
  * Interface to key generation.
  */
 public class KeyGen {
-    public record KeyPair(PublicKey publicKey, PrivateKey privateKey) {}
+    public static class KeyPair {
+        private PublicKey publicKey;
+        private PrivateKey privateKey;
+
+        public KeyPair(PublicKey publicKey, PrivateKey privateKey) {
+            this.publicKey = publicKey;
+            this.privateKey = privateKey;
+        }
+
+        public PublicKey publicKey() {
+            return publicKey;
+        }
+
+        public PrivateKey privateKey() {
+            return privateKey;
+        }
+    }
 
     private KeyGen() {}
 

@@ -1,13 +1,11 @@
 package edu.kit.tm.ps;
 
-import io.questdb.jar.jni.JarJniLoader;
-
 /**
  * Native interface to the asym_ratchet implementation.
  */
 class Sys {
     static {
-        JarJniLoader.loadLib(Sys.class, "/edu/kit/tm/ps/ratchet/libs", "jni_bridge");
+        System.loadLibrary("jni_bridge");
     }
 
     public static native long[] keypair_generate();

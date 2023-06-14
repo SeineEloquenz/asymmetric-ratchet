@@ -11,7 +11,8 @@ use nalgebra::{
 };
 use num_traits::identities::{One, Zero};
 use rand::{distributions::Distribution, Rng};
-use std::{fmt::Debug, iter, thread};
+use rayon::prelude::*;
+use std::{fmt::Debug, iter};
 
 const MAX_L: usize = 33;
 
@@ -308,18 +309,15 @@ pub fn hibe_enc<R: Rng>(mut rng: R, pk: &HibePublicKey, id: &[Scalar]) -> (Gt, H
 }
 
 pub fn hibe_dec(sk: &HibeUserSecretKey, c: &HibeCiphertext) -> Gt {
-    thread::scope(|s| {
-        let k1 = s.spawn(|| pairing(&c.0[0], &sk.2[0]));
-        let k2 = s.spawn(|| pairing(&c.0[1], &sk.1));
-        let k3 = s.spawn(|| pairing(&c.1[0], &sk.0[0]));
-        let k4 = pairing(&c.1[1], &sk.0[1]);
-
-        let key = k1.join().unwrap()
-            + k2.join().unwrap()
-            - k3.join().unwrap()
-            - k4;
-        key
-    })
+    let params = vec![
+        (&c.0[0], &sk.2[0]),
+        (&c.0[1], &sk.1),
+        (&c.1[0], &sk.0[0]),
+        (&c.1[1], &sk.0[1]),
+    ];
+    let mut elems = Vec::with_capacity(4);
+    params.into_par_iter().map(|(a, b)| pairing(a, b)).collect_into_vec(&mut elems);
+    elems[0] + elems[1] - elems[2] - elems[3]
 }
 
 pub fn hibe_usk_del<R: Rng>(

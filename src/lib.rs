@@ -268,8 +268,10 @@ mod test {
         let plain = sk.decrypt(cipher).unwrap();
         assert_eq!(plain, message);
 
-        pk.ratchet().unwrap();
-        sk.ratchet(&mut rng).unwrap();
+        for _ in 0..33 {
+            pk.ratchet().unwrap();
+            sk.ratchet(&mut rng).unwrap();
+        }
 
         let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
         let plain = sk.decrypt(cipher).unwrap();
@@ -339,5 +341,35 @@ mod test {
 
         // Take care of the 8 extra bytes for the vec length thanks to bincode.
         assert_eq!(serialized.len(), 208 + 8 + message.len());
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_serialize_privkey() {
+        let message: &[u8] = b"Hello, world!";
+
+        let mut rng = rand::thread_rng();
+        let (pk, sk) = generate_keypair(&mut rng);
+
+        let sk: PrivateKey = bincode::deserialize(&bincode::serialize(&sk).unwrap()).unwrap();
+
+        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
+        let plain = sk.decrypt(cipher).unwrap();
+        assert_eq!(plain, message);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_serialize_pubkey() {
+        let message: &[u8] = b"Hello, world!";
+
+        let mut rng = rand::thread_rng();
+        let (pk, sk) = generate_keypair(&mut rng);
+
+        let pk: PublicKey = bincode::deserialize(&bincode::serialize(&pk).unwrap()).unwrap();
+
+        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
+        let plain = sk.decrypt(cipher).unwrap();
+        assert_eq!(plain, message);
     }
 }

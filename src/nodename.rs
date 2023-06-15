@@ -146,4 +146,38 @@ mod test {
             NodeName::ROOT.right().left()
         );
     }
+
+    #[test]
+    fn test_is_leaf() {
+        let mut node = NodeName::ROOT;
+
+        assert!(!node.is_leaf());
+
+        for _ in 0..=30 {
+            node = node.left();
+            assert!(!node.is_leaf(), "{:?} is a leaf", node);
+        }
+
+        node = node.left();
+        assert!(node.is_leaf());
+    }
+
+    #[test]
+    fn test_next() {
+        let mut node = NodeName::ROOT;
+
+        for _ in 0..=31 {
+            node = node.left();
+        }
+
+        node = node.next().unwrap();
+
+        let mut correct = NodeName::ROOT;
+        for _ in 0..=30 {
+            correct = correct.left();
+        }
+        correct = correct.right();
+
+        assert_eq!(node, correct);
+    }
 }

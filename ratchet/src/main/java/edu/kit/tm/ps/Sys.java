@@ -16,11 +16,19 @@ class Sys {
 
     public static native byte[] pubkey_encrypt(long pointer, byte[] payload);
 
+    public static native byte[] pubkey_serialize(long pointer);
+
+    public static native long pubkey_deserialize(byte[] data);
+
     public static native void pubkey_drop(long pointer);
 
     public static native void privkey_ratchet(long pointer);
 
     public static native byte[] privkey_decrypt(long pointer, byte[] payload);
+
+    public static native byte[] privkey_serialize(long pointer);
+
+    public static native long privkey_deserialize(byte[] data);
 
     public static native void privkey_drop(long pointer);
 }

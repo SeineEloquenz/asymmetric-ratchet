@@ -22,4 +22,12 @@ public class PublicKey {
     public byte[] encrypt(byte[] payload) throws RatchetException {
         return Sys.pubkey_encrypt(pointer, payload);
     }
+
+    public byte[] serialize() {
+        return Sys.pubkey_serialize(pointer);
+    }
+
+    public static PublicKey deserialize(byte[] data) throws RatchetException {
+        return new PublicKey(Sys.pubkey_deserialize(data));
+    }
 }

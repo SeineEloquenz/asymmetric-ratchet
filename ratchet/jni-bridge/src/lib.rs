@@ -4,7 +4,25 @@ use jni::{
     sys::jlong,
     JNIEnv,
 };
+use serde::Serialize;
 use rand::thread_rng;
+
+const RATCHET_EXCEPTION: &str = "edu/kit/tm/ps/RatchetException";
+
+fn serialize_as_bytearray<'a, 'b, T: Serialize>(env: JNIEnv<'a>, obj: &'b T) -> JByteArray<'a> {
+    let serialized = bincode::serialize(obj).unwrap();
+    let result = env.new_byte_array(serialized.len() as i32).unwrap();
+    env.set_byte_array_region(&result, 0, bytemuck::cast_slice(&serialized))
+        .unwrap();
+    result
+}
+
+fn bytearray_as_vec(env: &JNIEnv, array: JByteArray) -> Vec<u8> {
+    let mut buf = vec![0u8; env.get_array_length(&array).unwrap() as usize];
+    env.get_byte_array_region(&array, 0, bytemuck::cast_slice_mut(&mut buf))
+        .unwrap();
+    buf
+}
 
 #[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_keypair_1generate<'local>(
@@ -33,7 +51,7 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_keypair_1generate_1epoch<'local>(
     epoch: jlong,
 ) -> JLongArray<'local> {
     let Ok(epoch) = epoch.try_into() else {
-        env.throw_new("edu/kit/tm/ps/RatchetException", "Epoch is negative").unwrap();
+        env.throw_new(RATCHET_EXCEPTION, "Epoch is negative").unwrap();
         return JObject::null().into();
     };
     let keypair = asym_ratchet::generate_keypair_in_epoch(thread_rng(), epoch);
@@ -60,7 +78,7 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1ratchet<'local>(
     let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
     // I don't think we will ever reach this but let's better be safe than sorry
     if let Err(RatchetError::Exhausted) = pubkey.ratchet() {
-        env.throw_new("edu/kit/tm/ps/RatchetException", "Ratchet is exhausted")
+        env.throw_new(RATCHET_EXCEPTION, "Ratchet is exhausted")
             .unwrap();
     }
 }
@@ -73,15 +91,42 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1encrypt<'local>(
     payload: JByteArray<'local>,
 ) -> JByteArray<'local> {
     let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
-    let mut buf = vec![0u8; env.get_array_length(&payload).unwrap() as usize];
-    env.get_byte_array_region(&payload, 0, bytemuck::cast_slice_mut(&mut buf))
-        .unwrap();
+    let buf = bytearray_as_vec(&env, payload);
     let encrypted = pubkey.encrypt(thread_rng(), buf).unwrap();
-    let serialized = bincode::serialize(&encrypted).unwrap();
-    let result = env.new_byte_array(serialized.len() as i32).unwrap();
-    env.set_byte_array_region(&result, 0, bytemuck::cast_slice(&serialized))
-        .unwrap();
-    result
+    serialize_as_bytearray(env, &encrypted)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1serialize<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    pointer: jlong,
+) -> JByteArray<'local> {
+    let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
+    let serialized = bincode::serialize(&pubkey).unwrap();
+    serialize_as_bytearray(env, &serialized)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1deserialize<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    data: JByteArray<'local>,
+) -> jlong {
+    let buf = bytearray_as_vec(&env, data);
+    let key: Result<PublicKey, _> = bincode::deserialize(&buf);
+
+    match key {
+        Ok(key) => {
+            let pointer = Box::leak(Box::new(key));
+            pointer as *mut _ as jlong
+        }
+        Err(err) => {
+            env.throw_new(RATCHET_EXCEPTION, format!("Could not deserialize public key: {}", err))
+                .unwrap();
+            0
+        }
+    }
 }
 
 #[no_mangle]
@@ -101,7 +146,7 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1ratchet<'local>(
 ) {
     let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
     if let Err(RatchetError::Exhausted) = privkey.ratchet(thread_rng()) {
-        env.throw_new("edu/kit/tm/ps/RatchetException", "Ratchet is exhausted")
+        env.throw_new(RATCHET_EXCEPTION, "Ratchet is exhausted")
             .unwrap();
     }
 }
@@ -119,15 +164,45 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1decrypt<'local>(
         .unwrap();
 
     let Ok(ciphertext) = bincode::deserialize(&buf) else {
-        env.throw_new("edu/kit/tm/ps/RatchetException", "Invalid ciphertext").unwrap();
+        env.throw_new(RATCHET_EXCEPTION, "Invalid ciphertext").unwrap();
         return JObject::null().into();
     };
 
     let decrypted = privkey.decrypt(ciphertext).unwrap();
-    let result = env.new_byte_array(decrypted.len() as i32).unwrap();
-    env.set_byte_array_region(&result, 0, bytemuck::cast_slice(&decrypted))
-        .unwrap();
-    result
+    serialize_as_bytearray(env, &decrypted)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1serialize<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    pointer: jlong,
+) -> JByteArray<'local> {
+    let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
+    let serialized = bincode::serialize(&privkey).unwrap();
+    serialize_as_bytearray(env, &serialized)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1deserialize<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    data: JByteArray<'local>,
+) -> jlong {
+    let buf = bytearray_as_vec(&env, data);
+    let key: Result<PrivateKey, _> = bincode::deserialize(&buf);
+
+    match key {
+        Ok(key) => {
+            let pointer = Box::leak(Box::new(key));
+            pointer as *mut _ as jlong
+        }
+        Err(err) => {
+            env.throw_new(RATCHET_EXCEPTION, format!("Could not deserialize private key: {}", err))
+                .unwrap();
+            0
+        }
+    }
 }
 
 #[no_mangle]

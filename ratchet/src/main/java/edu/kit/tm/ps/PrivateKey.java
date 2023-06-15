@@ -19,6 +19,14 @@ public class PrivateKey {
     public byte[] decrypt(byte[] ciphertext) throws RatchetException {
         return Sys.privkey_decrypt(pointer, ciphertext);
     }
+
+    public byte[] serialize() {
+        return Sys.privkey_serialize(pointer);
+    }
+
+    public static PrivateKey deserialize(byte[] data) throws RatchetException {
+        return new PrivateKey(Sys.privkey_deserialize(data));
+    }
 }
 
 

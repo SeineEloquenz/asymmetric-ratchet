@@ -30,8 +30,6 @@
 //!
 //! Note that this implementation does not apply padding to the input payload! It is the duty of
 //! the callers to ensure that the payload length does not leak information.
-use std::iter;
-
 use aes::cipher::{KeyIvInit, StreamCipher};
 use bkp::Scalar;
 use bls12_381::Gt;
@@ -211,7 +209,6 @@ pub fn generate_keypair_in_epoch<R: Rng + CryptoRng>(
 
 fn identity_to_scalar(id: NodeName) -> Vec<Scalar> {
     id.walk()
-        .chain(iter::once(id))
         // Ensure that our ID is not 0, as that would break the hierarchical encryption
         .map(|i| bls12_381::Scalar::from(i.path() as u64 + 0x42).into())
         .collect()

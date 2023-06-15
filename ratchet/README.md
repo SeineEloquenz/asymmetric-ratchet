@@ -4,7 +4,7 @@ Usage:
 
 ```bash
 # Ensure that you have the rust targets installed
-rustup target add i686-linux-android x86_64-linux-android armv7-linux-androideabi
+rustup target add i686-linux-android x86_64-linux-android armv7-linux-androideabi aarch64-linux-android
 # Compile the Rust library
 ./gradlew cargoBuild
 # Compile the Android library

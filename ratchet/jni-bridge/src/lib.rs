@@ -9,10 +9,14 @@ use rand::thread_rng;
 
 const RATCHET_EXCEPTION: &str = "edu/kit/tm/ps/RatchetException";
 
-fn serialize_as_bytearray<'a, 'b, T: Serialize>(env: JNIEnv<'a>, obj: &'b T) -> JByteArray<'a> {
+fn serialize_as_bytearray<'a, T: Serialize>(env: &JNIEnv<'a>, obj: &T) -> JByteArray<'a> {
     let serialized = bincode::serialize(obj).unwrap();
-    let result = env.new_byte_array(serialized.len() as i32).unwrap();
-    env.set_byte_array_region(&result, 0, bytemuck::cast_slice(&serialized))
+    slice_as_bytearray(env, &serialized)
+}
+
+fn slice_as_bytearray<'a>(env: &JNIEnv<'a>, sl: &[u8]) -> JByteArray<'a> {
+    let result = env.new_byte_array(sl.len() as i32).unwrap();
+    env.set_byte_array_region(&result, 0, bytemuck::cast_slice(&sl))
         .unwrap();
     result
 }
@@ -93,7 +97,7 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1encrypt<'local>(
     let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
     let buf = bytearray_as_vec(&env, payload);
     let encrypted = pubkey.encrypt(thread_rng(), buf).unwrap();
-    serialize_as_bytearray(env, &encrypted)
+    serialize_as_bytearray(&env, &encrypted)
 }
 
 #[no_mangle]
@@ -103,8 +107,7 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1serialize<'local>(
     pointer: jlong,
 ) -> JByteArray<'local> {
     let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
-    let serialized = bincode::serialize(&pubkey).unwrap();
-    serialize_as_bytearray(env, &serialized)
+    serialize_as_bytearray(&env, &pubkey)
 }
 
 #[no_mangle]
@@ -159,9 +162,7 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1decrypt<'local>(
     ciphertext: JByteArray<'local>,
 ) -> JByteArray<'local> {
     let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
-    let mut buf = vec![0u8; env.get_array_length(&ciphertext).unwrap() as usize];
-    env.get_byte_array_region(&ciphertext, 0, bytemuck::cast_slice_mut(&mut buf))
-        .unwrap();
+    let buf = bytearray_as_vec(&env, ciphertext);
 
     let Ok(ciphertext) = bincode::deserialize(&buf) else {
         env.throw_new(RATCHET_EXCEPTION, "Invalid ciphertext").unwrap();
@@ -169,7 +170,7 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1decrypt<'local>(
     };
 
     let decrypted = privkey.decrypt(ciphertext).unwrap();
-    serialize_as_bytearray(env, &decrypted)
+    slice_as_bytearray(&env, &decrypted)
 }
 
 #[no_mangle]
@@ -179,8 +180,7 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1serialize<'local>(
     pointer: jlong,
 ) -> JByteArray<'local> {
     let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
-    let serialized = bincode::serialize(&privkey).unwrap();
-    serialize_as_bytearray(env, &serialized)
+    serialize_as_bytearray(&env, &privkey)
 }
 
 #[no_mangle]

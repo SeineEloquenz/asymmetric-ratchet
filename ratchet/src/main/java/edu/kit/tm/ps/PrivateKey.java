@@ -27,6 +27,10 @@ public class PrivateKey {
     public static PrivateKey deserialize(byte[] data) throws RatchetException {
         return new PrivateKey(Sys.privkey_deserialize(data));
     }
+
+    public long currentEpoch() {
+        return Sys.privkey_current_epoch(pointer);
+    }
 }
 
 

@@ -88,6 +88,20 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1ratchet<'local>(
 }
 
 #[no_mangle]
+pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1fast_1forward<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    pointer: jlong,
+    count: jlong,
+) {
+    let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
+    if let Err(RatchetError::Exhausted) = pubkey.fast_forward(count.try_into().unwrap()) {
+        env.throw_new(RATCHET_EXCEPTION, "Ratchet is exhausted")
+            .unwrap();
+    }
+}
+
+#[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1encrypt<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -130,6 +144,16 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1deserialize<'local>(
             0
         }
     }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1current_1epoch<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    pointer: jlong,
+) -> jlong {
+    let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
+    pubkey.current_epoch().try_into().unwrap()
 }
 
 #[no_mangle]
@@ -203,6 +227,16 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1deserialize<'local>(
             0
         }
     }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1current_1epoch<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    pointer: jlong,
+) -> jlong {
+    let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
+    privkey.current_epoch().try_into().unwrap()
 }
 
 #[no_mangle]

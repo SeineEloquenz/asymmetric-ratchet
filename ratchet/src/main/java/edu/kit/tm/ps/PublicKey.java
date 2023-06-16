@@ -19,6 +19,10 @@ public class PublicKey {
         Sys.pubkey_ratchet(pointer);
     }
 
+    public void fastForward(long count) throws RatchetException {
+        Sys.pubkey_fast_forward(pointer, count);
+    }
+
     public byte[] encrypt(byte[] payload) throws RatchetException {
         return Sys.pubkey_encrypt(pointer, payload);
     }
@@ -29,5 +33,9 @@ public class PublicKey {
 
     public static PublicKey deserialize(byte[] data) throws RatchetException {
         return new PublicKey(Sys.pubkey_deserialize(data));
+    }
+
+    public long currentEpoch() {
+        return Sys.pubkey_current_epoch(pointer);
     }
 }

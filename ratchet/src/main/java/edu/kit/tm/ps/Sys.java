@@ -14,11 +14,15 @@ class Sys {
 
     public static native void pubkey_ratchet(long pointer);
 
+    public static native void pubkey_fast_forward(long pointer, long count);
+
     public static native byte[] pubkey_encrypt(long pointer, byte[] payload);
 
     public static native byte[] pubkey_serialize(long pointer);
 
     public static native long pubkey_deserialize(byte[] data);
+
+    public static native long pubkey_current_epoch(long pointer);
 
     public static native void pubkey_drop(long pointer);
 
@@ -29,6 +33,8 @@ class Sys {
     public static native byte[] privkey_serialize(long pointer);
 
     public static native long privkey_deserialize(byte[] data);
+
+    public static native long privkey_current_epoch(long pointer);
 
     public static native void privkey_drop(long pointer);
 }

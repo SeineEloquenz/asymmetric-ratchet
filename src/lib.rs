@@ -105,6 +105,17 @@ impl PublicKey {
             payload,
         })
     }
+
+    /// "Fast-forwards" the given key. Equivalent to calling [`ratchet`] `count` times, but faster.
+    pub fn fast_forward(&mut self, count: u64) -> Result<(), RatchetError> {
+        let new_epoch = self.current_name.to_numbering() + count;
+        if new_epoch < 2u64.pow(33) - 1 {
+            self.current_name = NodeName::from_numbering(new_epoch);
+            Ok(())
+        } else {
+            Err(RatchetError::Exhausted)
+        }
+    }
 }
 
 /// Structure representing a ratchetable private key.

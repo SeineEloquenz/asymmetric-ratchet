@@ -104,6 +104,23 @@ impl NodeName {
         }
         node
     }
+
+    pub fn to_numbering(self) -> u64 {
+        let mut result = 0;
+        let mut bonus = 2u64.pow(32);
+
+        for node in self.walk() {
+            let parent = node.parent();
+            if node == parent.left() {
+                result += 1;
+            } else {
+                result += bonus;
+            }
+            bonus /= 2;
+        }
+
+        result
+    }
 }
 
 #[cfg(test)]
@@ -145,6 +162,27 @@ mod test {
             NodeName::from_numbering(2u64.pow(32) + 1),
             NodeName::ROOT.right().left()
         );
+    }
+
+    #[test]
+    fn to_numbering_root() {
+        assert_eq!(NodeName::ROOT.to_numbering(), 0);
+    }
+
+    #[test]
+    fn to_numbering_node() {
+        assert_eq!(
+            NodeName::ROOT.right().left().to_numbering(),
+            2u64.pow(32) + 1,
+        );
+    }
+
+    #[test]
+    fn numbering_roundtrip() {
+        let tests = [0u64, 1, 13, 42, 1337, 41238, 9182736, 1826455];
+        for test in tests {
+            assert_eq!(NodeName::from_numbering(test).to_numbering(), test);
+        }
     }
 
     #[test]

@@ -116,6 +116,11 @@ impl PublicKey {
             Err(RatchetError::Exhausted)
         }
     }
+
+    /// Returns the number of the current epoch of the key.
+    pub fn current_epoch(&self) -> u64 {
+        self.current_name.to_numbering()
+    }
 }
 
 /// Structure representing a ratchetable private key.
@@ -169,6 +174,11 @@ impl PrivateKey {
         cipher.apply_keystream(&mut ciphertext.payload);
 
         Ok(ciphertext.payload)
+    }
+
+    /// Returns the number of the current epoch of the key.
+    pub fn current_epoch(&self) -> u64 {
+        self.current_name.to_numbering()
     }
 }
 

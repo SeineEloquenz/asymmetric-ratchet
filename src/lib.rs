@@ -201,10 +201,10 @@ impl PrivateKey {
         let new_epoch = self.current_name.to_numbering() + count;
         if new_epoch < 2u64.pow(33) - 1 {
             let new_name = NodeName::from_numbering(new_epoch);
-            if new_name.in_subtree(self.current_name.left()) {
+            if !self.current_name.is_leaf() && new_name.in_subtree(self.current_name.left()) {
                 self.ratchet(&mut rng)?;
                 self.fast_forward(rng, count - 1)
-            } else if new_name.in_subtree(self.current_name.right()) {
+            } else if !self.current_name.is_leaf() && new_name.in_subtree(self.current_name.right()) {
                 let jump =
                     self.current_name.right().to_numbering() - self.current_name.to_numbering();
 
@@ -438,6 +438,13 @@ mod test {
         }
         sk.fast_forward(&mut rng, 20).unwrap();
 
+        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
+        let plain = sk.decrypt(cipher).unwrap();
+        assert_eq!(plain, message);
+
+        let (mut pk, mut sk) = generate_keypair_in_epoch(&mut rng, 851);
+        pk.fast_forward(853).unwrap();
+        sk.fast_forward(&mut rng, 853).unwrap();
         let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
         let plain = sk.decrypt(cipher).unwrap();
         assert_eq!(plain, message);

@@ -28,6 +28,8 @@ class Sys {
 
     public static native void privkey_ratchet(long pointer);
 
+    public static native void privkey_fast_forward(long pointer, long count);
+
     public static native byte[] privkey_decrypt(long pointer, byte[] payload);
 
     public static native byte[] privkey_serialize(long pointer);

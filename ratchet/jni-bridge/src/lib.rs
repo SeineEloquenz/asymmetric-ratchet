@@ -179,6 +179,20 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1ratchet<'local>(
 }
 
 #[no_mangle]
+pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1fast_1forward<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    pointer: jlong,
+    count: jlong,
+) {
+    let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
+    if let Err(RatchetError::Exhausted) = privkey.fast_forward(thread_rng(), count.try_into().unwrap()) {
+        env.throw_new(RATCHET_EXCEPTION, "Ratchet is exhausted")
+            .unwrap();
+    }
+}
+
+#[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1decrypt<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,

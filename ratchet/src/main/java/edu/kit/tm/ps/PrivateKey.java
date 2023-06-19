@@ -16,6 +16,10 @@ public class PrivateKey {
         Sys.privkey_ratchet(pointer);
     }
 
+    public void fastForward(long count) throws RatchetException {
+        Sys.privkey_fast_forward(pointer, count);
+    }
+
     public byte[] decrypt(byte[] ciphertext) throws RatchetException {
         return Sys.privkey_decrypt(pointer, ciphertext);
     }

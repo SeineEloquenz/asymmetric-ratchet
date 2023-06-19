@@ -121,6 +121,11 @@ impl NodeName {
 
         result
     }
+
+    pub fn in_subtree(self, other: NodeName) -> bool {
+        other == Self::ROOT
+            || (self.len() >= other.len() && self.walk().find(|n| *n == other).is_some())
+    }
 }
 
 #[cfg(test)]
@@ -217,5 +222,19 @@ mod test {
         correct = correct.right();
 
         assert_eq!(node, correct);
+    }
+
+    #[test]
+    fn test_in_subtree() {
+        assert!(NodeName::ROOT.in_subtree(NodeName::ROOT));
+        assert!(NodeName::ROOT.left().in_subtree(NodeName::ROOT.left()));
+        assert!(NodeName::ROOT.left().in_subtree(NodeName::ROOT));
+        assert!(NodeName::ROOT.right().in_subtree(NodeName::ROOT));
+        assert!(NodeName::ROOT.left().right().in_subtree(NodeName::ROOT));
+        assert!(NodeName::ROOT.left().left().in_subtree(NodeName::ROOT));
+        assert!(!NodeName::ROOT.in_subtree(NodeName::ROOT.left()));
+        assert!(!NodeName::ROOT.in_subtree(NodeName::ROOT.right()));
+        assert!(!NodeName::ROOT.right().in_subtree(NodeName::ROOT.left()));
+        assert!(!NodeName::ROOT.left().in_subtree(NodeName::ROOT.right()));
     }
 }

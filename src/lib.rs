@@ -187,6 +187,65 @@ impl PrivateKey {
         Ok(ciphertext.payload)
     }
 
+    pub fn fast_forward<R: Rng + CryptoRng>(
+        &mut self,
+        mut rng: R,
+        count: u64,
+    ) -> Result<(), RatchetError> {
+        if count == 0 {
+            return Ok(());
+        } else if count == 1 {
+            return self.ratchet(rng);
+        }
+
+        let new_epoch = self.current_name.to_numbering() + count;
+        if new_epoch < 2u64.pow(33) - 1 {
+            let new_name = NodeName::from_numbering(new_epoch);
+            if new_name.in_subtree(self.current_name.left()) {
+                self.ratchet(&mut rng)?;
+                self.fast_forward(rng, count - 1)
+            } else if new_name.in_subtree(self.current_name.right()) {
+                let jump =
+                    self.current_name.right().to_numbering() - self.current_name.to_numbering();
+
+                let current_key = self.keystack.pop().unwrap();
+                let right_subkey = bkp::hibe_usk_del(
+                    &mut rng,
+                    &current_key.0,
+                    &current_key.1,
+                    *identity_to_scalar(self.current_name.right())
+                        .last()
+                        .unwrap(),
+                );
+                self.current_name = self.current_name.right();
+                self.keystack.push(right_subkey);
+                self.fast_forward(rng, count - jump)
+            } else if self.current_name == self.current_name.parent().left() {
+                let target = self.current_name.parent().right();
+                let jump = target.to_numbering() - self.current_name.to_numbering();
+                self.current_name = target;
+                self.keystack.pop().unwrap();
+                self.fast_forward(rng, count - jump)
+            } else if self.current_name == self.current_name.parent().right() {
+                let mut target = self.current_name;
+                while !target.is_leaf() {
+                    target = target.right();
+                }
+                target = target.next().unwrap();
+                let jump = target.to_numbering() - self.current_name.to_numbering();
+                self.current_name = target;
+                self.keystack.pop().unwrap();
+                self.fast_forward(rng, count - jump)
+            } else {
+                unreachable!(
+                    "Either we're a left child or a right child, this should never happen"
+                );
+            }
+        } else {
+            Err(RatchetError::Exhausted)
+        }
+    }
+
     /// Returns the number of the current epoch of the key.
     pub fn current_epoch(&self) -> u64 {
         self.current_name.to_numbering()
@@ -358,6 +417,30 @@ mod test {
         let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
         let plain = sk.decrypt(cipher).unwrap();
         assert_ne!(plain, message);
+    }
+
+    #[test]
+    fn fast_forward() {
+        let message: &[u8] = b"Hello, world!";
+
+        let mut rng = rand::thread_rng();
+        let (mut pk, mut sk) = generate_keypair(&mut rng);
+
+        pk.fast_forward(1337).unwrap();
+        sk.fast_forward(&mut rng, 1337).unwrap();
+
+        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
+        let plain = sk.decrypt(cipher).unwrap();
+        assert_eq!(plain, message);
+
+        for _ in 0..20 {
+            pk.ratchet().unwrap();
+        }
+        sk.fast_forward(&mut rng, 20).unwrap();
+
+        let cipher = pk.encrypt(&mut rng, message.into()).unwrap();
+        let plain = sk.decrypt(cipher).unwrap();
+        assert_eq!(plain, message);
     }
 
     #[test]

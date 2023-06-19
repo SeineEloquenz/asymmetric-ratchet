@@ -326,6 +326,24 @@ pub fn hibe_usk_del<R: Rng>(
     udk: &HibeUserDeriveKey,
     next_id: Scalar,
 ) -> (HibeUserSecretKey, HibeUserDeriveKey) {
+    hibe_usk_del_without_rng(
+        Scalar::random(&mut rng),
+        Scalar::random(&mut rng),
+        usk,
+        udk,
+        next_id,
+    )
+}
+
+/// Allows the derivation without access to the random generator. Useful if the caller wants to
+/// pre-generate random values (e.g. in a threading context with a shared rng).
+pub fn hibe_usk_del_without_rng(
+    scalar_1: Scalar,
+    scalar_2: Scalar,
+    usk: &HibeUserSecretKey,
+    udk: &HibeUserDeriveKey,
+    next_id: Scalar,
+) -> (HibeUserSecretKey, HibeUserDeriveKey) {
     #![allow(non_snake_case)]
     // The paper says to loop from l(id'), but since we're actually cutting away the elements here,
     // it's always the nextmost one.
@@ -335,8 +353,8 @@ pub fn hibe_usk_del<R: Rng>(
     let u_1_hat = matrix![G2Affine::from(udk.1[0] + udk.3[p].1[0] * next_id.0)];
     let V_hat = matrix![G2Affine::from(udk.2[0] + udk.3[p].3[0] * next_id.0)];
 
-    let s_prime = matrix![Scalar::random(&mut rng)];
-    let S = matrix![Scalar::random(&mut rng)];
+    let s_prime = matrix![scalar_1];
+    let S = matrix![scalar_2];
     let t_prime = matrix![
         G2Affine::from(usk.0[0] + udk.0[0] * s_prime[0].0);
         G2Affine::from(usk.0[1] + udk.0[1] * s_prime[0].0);

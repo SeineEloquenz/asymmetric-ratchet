@@ -145,20 +145,31 @@ impl PrivateKey {
     pub fn ratchet<R: Rng + CryptoRng>(&mut self, mut rng: R) -> Result<(), RatchetError> {
         let next_name = self.current_name.next().ok_or(RatchetError::Exhausted)?;
         let current_key = self.keystack.pop().unwrap();
+        let random_scalars = (0..4)
+            .map(|_| bkp::Scalar::random(&mut rng))
+            .collect::<Vec<_>>();
         if !self.current_name.is_leaf() {
-            let left = bkp::hibe_usk_del(
-                &mut rng,
-                &current_key.0,
-                &current_key.1,
-                *identity_to_scalar(self.current_name.left()).last().unwrap(),
-            );
-            let right = bkp::hibe_usk_del(
-                &mut rng,
-                &current_key.0,
-                &current_key.1,
-                *identity_to_scalar(self.current_name.right())
-                    .last()
-                    .unwrap(),
+            let (left, right) = rayon::join(
+                || {
+                    bkp::hibe_usk_del_without_rng(
+                        random_scalars[0],
+                        random_scalars[1],
+                        &current_key.0,
+                        &current_key.1,
+                        *identity_to_scalar(self.current_name.left()).last().unwrap(),
+                    )
+                },
+                || {
+                    bkp::hibe_usk_del_without_rng(
+                        random_scalars[2],
+                        random_scalars[3],
+                        &current_key.0,
+                        &current_key.1,
+                        *identity_to_scalar(self.current_name.right())
+                            .last()
+                            .unwrap(),
+                    )
+                },
             );
             self.keystack.push(right);
             self.keystack.push(left);

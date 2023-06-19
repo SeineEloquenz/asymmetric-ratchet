@@ -350,16 +350,19 @@ pub fn hibe_usk_del<R: Rng>(
     let v_prime = matrix![G2Affine::from(v_hat[0] + V_hat[0] * s_prime[0].0)];
     let V_prime = matrix![G2Affine::from(V_hat[0] * S[0].0)];
 
-    let mut tail = Vec::new();
+    let mut tail = Vec::with_capacity(udk.3.len() - 1);
 
-    for (di, Di, ei, Ei) in &udk.3[1..] {
-        let di_prime = G2Affine::from(di + Di[0] * s_prime[0].0);
-        let Di_prime = matrix![G2Affine::from(Di[0] * S[0].0)];
-        let ei_prime = vector![G2Affine::from(ei[0] + Ei[0] * s_prime[0].0)];
-        let Ei_prime = matrix![G2Affine::from(Ei[0] * S[0].0)];
+    udk.3[1..]
+        .par_iter()
+        .map(|(di, Di, ei, Ei)| {
+            let di_prime = G2Affine::from(di + Di[0] * s_prime[0].0);
+            let Di_prime = matrix![G2Affine::from(Di[0] * S[0].0)];
+            let ei_prime = vector![G2Affine::from(ei[0] + Ei[0] * s_prime[0].0)];
+            let Ei_prime = matrix![G2Affine::from(Ei[0] * S[0].0)];
 
-        tail.push((di_prime, Di_prime, ei_prime, Ei_prime));
-    }
+            (di_prime, Di_prime, ei_prime, Ei_prime)
+        })
+        .collect_into_vec(&mut tail);
 
     let usk_prime = (t_prime, u_prime, v_prime);
     let udk_prime = (T_prime, u_1_prime, V_prime, tail);

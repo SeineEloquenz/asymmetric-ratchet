@@ -51,6 +51,7 @@ cargo {
     module = "./jni-bridge"
     targets = ["x86_64", "arm", "x86", "arm64"]
     libname = "jni_bridge"
+    profile = "release"
 }
 
 repositories {

@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use asym_ratchet::{PrivateKey, PublicKey, RatchetError};
 use jni::{
     objects::{JByteArray, JClass, JLongArray, JObject},
@@ -6,6 +8,35 @@ use jni::{
 };
 use serde::Serialize;
 use rand::thread_rng;
+
+macro_rules! panic_guard {
+    (#, $env:ident, $name:expr, $body:expr) => {
+        panic_guard!(JObject::default().into(), $env, $name, $body)
+    };
+    ($env:ident, $name:expr, $body:expr) => {
+        panic_guard!((), $env, $name, $body)
+    };
+    ($default:expr, $env:ident, $name:expr, $body:expr) => {
+        {
+            let $env = &Mutex::new($env);
+            let panic = ::std::panic::catch_unwind(move || $body);
+            match panic {
+                Ok(value) => value,
+                Err(e) => {
+                    let panic_str = e.downcast_ref::<&'static str>()
+                        .map(|s| *s)
+                        .or_else(|| e.downcast_ref::<String>().map(String::as_str))
+                        .unwrap_or("<unknown panic>");
+                    $env.lock()
+                        .unwrap()
+                        .throw_new(RATCHET_EXCEPTION, format!("{} panic'd: {}", $name, panic_str))
+                        .unwrap();
+                    $default
+                }
+            }
+        }
+    };
+}
 
 const RATCHET_EXCEPTION: &str = "edu/kit/tm/ps/RatchetException";
 
@@ -33,72 +64,88 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_keypair_1generate<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> JLongArray<'local> {
-    let keypair = asym_ratchet::generate_keypair(thread_rng());
+    panic_guard!(#, env, "keypair_generate", {
+        let keypair = asym_ratchet::generate_keypair(thread_rng());
 
-    let pubkey = Box::leak(Box::new(keypair.0));
-    let privkey = Box::leak(Box::new(keypair.1));
+        let pubkey = Box::leak(Box::new(keypair.0));
+        let privkey = Box::leak(Box::new(keypair.1));
 
-    let jarray = env.new_long_array(2).unwrap();
-    env.set_long_array_region(
-        &jarray,
-        0,
-        &[pubkey as *mut _ as jlong, privkey as *mut _ as jlong],
-    )
-    .unwrap();
-    jarray
+        let jarray = env.lock().unwrap().new_long_array(2).unwrap();
+        env.lock()
+            .unwrap()
+            .set_long_array_region(
+                &jarray,
+                0,
+                &[pubkey as *mut _ as jlong, privkey as *mut _ as jlong],
+            )
+            .unwrap();
+        jarray
+    })
 }
 
 #[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_keypair_1generate_1epoch<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     epoch: jlong,
 ) -> JLongArray<'local> {
-    let Ok(epoch) = epoch.try_into() else {
-        env.throw_new(RATCHET_EXCEPTION, "Epoch is negative").unwrap();
-        return JObject::null().into();
-    };
-    let keypair = asym_ratchet::generate_keypair_in_epoch(thread_rng(), epoch);
+    panic_guard!(#, env, "keypair_generate_epoch", {
+        let Ok(epoch) = epoch.try_into() else {
+            env.lock().unwrap().throw_new(RATCHET_EXCEPTION, "Epoch is negative").unwrap();
+            return JObject::null().into();
+        };
+        let keypair = asym_ratchet::generate_keypair_in_epoch(thread_rng(), epoch);
 
-    let pubkey = Box::leak(Box::new(keypair.0));
-    let privkey = Box::leak(Box::new(keypair.1));
+        let pubkey = Box::leak(Box::new(keypair.0));
+        let privkey = Box::leak(Box::new(keypair.1));
 
-    let jarray = env.new_long_array(2).unwrap();
-    env.set_long_array_region(
-        &jarray,
-        0,
-        &[pubkey as *mut _ as jlong, privkey as *mut _ as jlong],
-    )
-    .unwrap();
-    jarray
+        let jarray = env.lock().unwrap().new_long_array(2).unwrap();
+        env.lock()
+            .unwrap()
+            .set_long_array_region(
+                &jarray,
+                0,
+                &[pubkey as *mut _ as jlong, privkey as *mut _ as jlong],
+            )
+            .unwrap();
+        jarray
+    })
 }
 
 #[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1ratchet<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     pointer: jlong,
 ) {
-    let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
-    // I don't think we will ever reach this but let's better be safe than sorry
-    if let Err(RatchetError::Exhausted) = pubkey.ratchet() {
-        env.throw_new(RATCHET_EXCEPTION, "Ratchet is exhausted")
-            .unwrap();
-    }
+    panic_guard!(env, "pubkey_ratchet", {
+        let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
+        // I don't think we will ever reach this but let's better be safe than sorry
+        if let Err(RatchetError::Exhausted) = pubkey.ratchet() {
+            env.lock()
+                .unwrap()
+                .throw_new(RATCHET_EXCEPTION, "Ratchet is exhausted")
+                .unwrap();
+        }
+    })
 }
 
 #[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1fast_1forward<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     pointer: jlong,
     count: jlong,
 ) {
-    let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
-    if let Err(RatchetError::Exhausted) = pubkey.fast_forward(count.try_into().unwrap()) {
-        env.throw_new(RATCHET_EXCEPTION, "Ratchet is exhausted")
-            .unwrap();
-    }
+    panic_guard!(env, "pubkey_fast_forward", {
+        let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
+        if let Err(RatchetError::Exhausted) = pubkey.fast_forward(count.try_into().unwrap()) {
+            env.lock()
+                .unwrap()
+                .throw_new(RATCHET_EXCEPTION, "Ratchet is exhausted")
+                .unwrap();
+        }
+    })
 }
 
 #[no_mangle]
@@ -108,10 +155,12 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1encrypt<'local>(
     pointer: jlong,
     payload: JByteArray<'local>,
 ) -> JByteArray<'local> {
-    let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
-    let buf = bytearray_as_vec(&env, payload);
-    let encrypted = pubkey.encrypt(thread_rng(), buf).unwrap();
-    serialize_as_bytearray(&env, &encrypted)
+    panic_guard!(#, env, "pubkey_encrypt", {
+        let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
+        let buf = bytearray_as_vec(&env.lock().unwrap(), payload);
+        let encrypted = pubkey.encrypt(thread_rng(), buf).unwrap();
+        serialize_as_bytearray(&env.lock().unwrap(), &encrypted)
+    })
 }
 
 #[no_mangle]
@@ -120,40 +169,48 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1serialize<'local>(
     _class: JClass<'local>,
     pointer: jlong,
 ) -> JByteArray<'local> {
-    let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
-    serialize_as_bytearray(&env, &pubkey)
+    panic_guard!(#, env, "pubkey_serialize", {
+        let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
+        serialize_as_bytearray(&env.lock().unwrap(), &pubkey)
+    })
 }
 
 #[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1deserialize<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     data: JByteArray<'local>,
 ) -> jlong {
-    let buf = bytearray_as_vec(&env, data);
-    let key: Result<PublicKey, _> = bincode::deserialize(&buf);
+    panic_guard!(0, env, "pubkey_deserialize", {
+        let buf = bytearray_as_vec(&env.lock().unwrap(), data);
+        let key: Result<PublicKey, _> = bincode::deserialize(&buf);
 
-    match key {
-        Ok(key) => {
-            let pointer = Box::leak(Box::new(key));
-            pointer as *mut _ as jlong
+        match key {
+            Ok(key) => {
+                let pointer = Box::leak(Box::new(key));
+                pointer as *mut _ as jlong
+            }
+            Err(err) => {
+                env.lock()
+                    .unwrap()
+                    .throw_new(RATCHET_EXCEPTION, format!("Could not deserialize public key: {}", err))
+                    .unwrap();
+                0
+            }
         }
-        Err(err) => {
-            env.throw_new(RATCHET_EXCEPTION, format!("Could not deserialize public key: {}", err))
-                .unwrap();
-            0
-        }
-    }
+    })
 }
 
 #[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1current_1epoch<'local>(
-    _env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     pointer: jlong,
 ) -> jlong {
-    let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
-    pubkey.current_epoch().try_into().unwrap()
+    panic_guard!(0, env, "pubkey_current_epoch", {
+        let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
+        pubkey.current_epoch().try_into().unwrap()
+    })
 }
 
 #[no_mangle]
@@ -167,48 +224,58 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1drop<'local>(
 
 #[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1ratchet<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     pointer: jlong,
 ) {
-    let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
-    if let Err(RatchetError::Exhausted) = privkey.ratchet(thread_rng()) {
-        env.throw_new(RATCHET_EXCEPTION, "Ratchet is exhausted")
-            .unwrap();
-    }
+    panic_guard!(env, "privkey_ratchet", {
+        let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
+        if let Err(RatchetError::Exhausted) = privkey.ratchet(thread_rng()) {
+            env.lock()
+                .unwrap()
+                .throw_new(RATCHET_EXCEPTION, "Ratchet is exhausted")
+                .unwrap();
+        }
+    })
 }
 
 #[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1fast_1forward<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     pointer: jlong,
     count: jlong,
 ) {
-    let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
-    if let Err(RatchetError::Exhausted) = privkey.fast_forward(thread_rng(), count.try_into().unwrap()) {
-        env.throw_new(RATCHET_EXCEPTION, "Ratchet is exhausted")
-            .unwrap();
-    }
+    panic_guard!(env, "privkey_fast_forward", {
+        let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
+        if let Err(RatchetError::Exhausted) = privkey.fast_forward(thread_rng(), count.try_into().unwrap()) {
+            env.lock()
+                .unwrap()
+                .throw_new(RATCHET_EXCEPTION, "Ratchet is exhausted")
+                .unwrap();
+        }
+    });
 }
 
 #[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1decrypt<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     pointer: jlong,
     ciphertext: JByteArray<'local>,
 ) -> JByteArray<'local> {
-    let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
-    let buf = bytearray_as_vec(&env, ciphertext);
+    panic_guard!(#, env, "privkey_decrypt", {
+        let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
+        let buf = bytearray_as_vec(&env.lock().unwrap(), ciphertext);
 
-    let Ok(ciphertext) = bincode::deserialize(&buf) else {
-        env.throw_new(RATCHET_EXCEPTION, "Invalid ciphertext").unwrap();
-        return JObject::null().into();
-    };
+        let Ok(ciphertext) = bincode::deserialize(&buf) else {
+            env.lock().unwrap().throw_new(RATCHET_EXCEPTION, "Invalid ciphertext").unwrap();
+            return JObject::null().into();
+        };
 
-    let decrypted = privkey.decrypt(ciphertext).unwrap();
-    slice_as_bytearray(&env, &decrypted)
+        let decrypted = privkey.decrypt(ciphertext).unwrap();
+        slice_as_bytearray(&env.lock().unwrap(), &decrypted)
+    })
 }
 
 #[no_mangle]
@@ -217,40 +284,48 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1serialize<'local>(
     _class: JClass<'local>,
     pointer: jlong,
 ) -> JByteArray<'local> {
-    let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
-    serialize_as_bytearray(&env, &privkey)
+    panic_guard!(#, env, "privkey_serialize", {
+        let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
+        serialize_as_bytearray(&env.lock().unwrap(), &privkey)
+    })
 }
 
 #[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1deserialize<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     data: JByteArray<'local>,
 ) -> jlong {
-    let buf = bytearray_as_vec(&env, data);
-    let key: Result<PrivateKey, _> = bincode::deserialize(&buf);
+    panic_guard!(0, env, "privkey_deserialize", {
+        let buf = bytearray_as_vec(&env.lock().unwrap(), data);
+        let key: Result<PrivateKey, _> = bincode::deserialize(&buf);
 
-    match key {
-        Ok(key) => {
-            let pointer = Box::leak(Box::new(key));
-            pointer as *mut _ as jlong
+        match key {
+            Ok(key) => {
+                let pointer = Box::leak(Box::new(key));
+                pointer as *mut _ as jlong
+            }
+            Err(err) => {
+                env.lock()
+                    .unwrap()
+                    .throw_new(RATCHET_EXCEPTION, format!("Could not deserialize private key: {}", err))
+                    .unwrap();
+                0
+            }
         }
-        Err(err) => {
-            env.throw_new(RATCHET_EXCEPTION, format!("Could not deserialize private key: {}", err))
-                .unwrap();
-            0
-        }
-    }
+    })
 }
 
 #[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1current_1epoch<'local>(
-    _env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     pointer: jlong,
 ) -> jlong {
-    let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
-    privkey.current_epoch().try_into().unwrap()
+    panic_guard!(0, env, "privkey_current_epoch", {
+        let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
+        privkey.current_epoch().try_into().unwrap()
+    })
 }
 
 #[no_mangle]

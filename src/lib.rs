@@ -462,7 +462,7 @@ mod test {
         let serialized = bincode::serialize(&cipher).unwrap();
 
         // Take care of the 8 extra bytes for the vec length thanks to bincode.
-        assert_eq!(serialized.len(), 208 + 8 + message.len());
+        assert_eq!(serialized.len(), 192 + 8 + message.len());
     }
 
     #[test]

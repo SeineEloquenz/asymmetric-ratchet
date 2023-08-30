@@ -202,6 +202,18 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1deserialize<'local>(
 }
 
 #[no_mangle]
+pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1clone<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    pointer: jlong,
+) -> jlong {
+    panic_guard!(0, env, "pubkey_clone", {
+        let pubkey: &mut PublicKey = unsafe { &mut *(pointer as *mut _) };
+        Box::leak(Box::new(pubkey.clone())) as *mut _ as jlong
+    })
+}
+
+#[no_mangle]
 pub extern "system" fn Java_edu_kit_tm_ps_Sys_pubkey_1current_1epoch<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -313,6 +325,18 @@ pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1deserialize<'local>(
                 0
             }
         }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_edu_kit_tm_ps_Sys_privkey_1clone<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    pointer: jlong,
+) -> jlong {
+    panic_guard!(0, env, "privkey_clone", {
+        let privkey: &mut PrivateKey = unsafe { &mut *(pointer as *mut _) };
+        Box::leak(Box::new(privkey.clone())) as *mut _ as jlong
     })
 }
 

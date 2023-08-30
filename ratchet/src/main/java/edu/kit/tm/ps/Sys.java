@@ -22,6 +22,8 @@ class Sys {
 
     public static native long pubkey_deserialize(byte[] data);
 
+    public static native long pubkey_clone(long pointer);
+
     public static native long pubkey_current_epoch(long pointer);
 
     public static native void pubkey_drop(long pointer);
@@ -35,6 +37,8 @@ class Sys {
     public static native byte[] privkey_serialize(long pointer);
 
     public static native long privkey_deserialize(byte[] data);
+
+    public static native long privkey_clone(long pointer);
 
     public static native long privkey_current_epoch(long pointer);
 

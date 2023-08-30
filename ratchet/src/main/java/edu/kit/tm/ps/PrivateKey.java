@@ -12,15 +12,15 @@ public class PrivateKey {
         Sys.privkey_drop(pointer);
     }
 
-    public void ratchet() throws RatchetException {
+    public synchronized void ratchet() throws RatchetException {
         Sys.privkey_ratchet(pointer);
     }
 
-    public void fastForward(long count) throws RatchetException {
+    public synchronized void fastForward(long count) throws RatchetException {
         Sys.privkey_fast_forward(pointer, count);
     }
 
-    public byte[] decrypt(byte[] ciphertext) throws RatchetException {
+    public synchronized byte[] decrypt(byte[] ciphertext) throws RatchetException {
         return Sys.privkey_decrypt(pointer, ciphertext);
     }
 
@@ -30,6 +30,10 @@ public class PrivateKey {
 
     public static PrivateKey deserialize(byte[] data) throws RatchetException {
         return new PrivateKey(Sys.privkey_deserialize(data));
+    }
+
+    public PrivateKey clone() {
+        return new PrivateKey(Sys.privkey_clone(pointer));
     }
 
     public long currentEpoch() {

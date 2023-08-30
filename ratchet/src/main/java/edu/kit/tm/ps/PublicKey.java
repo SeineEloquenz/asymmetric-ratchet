@@ -35,6 +35,10 @@ public class PublicKey {
         return new PublicKey(Sys.pubkey_deserialize(data));
     }
 
+    public PublicKey clone() {
+        return new PublicKey(Sys.pubkey_clone(pointer));
+    }
+
     public long currentEpoch() {
         return Sys.pubkey_current_epoch(pointer);
     }
